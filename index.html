@@ -53,26 +53,28 @@ function DataProvider({children}){
   const loadFromCloud=async()=>{
     setSyncStatus('loading');
     try{
-      const res=await fetch(GIST_API,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'});
-      if(!res.ok)throw new Error('Gist fetch failed');
-      const gist=await res.json();
-      const content=JSON.parse(gist.files[DATA_FILE].content);
+      // First try raw URL (CDN, no rate limit) with cache bust
+      const rawUrl=`https://gist.githubusercontent.com/Xixixi-coder/${GIST_ID}/raw/${DATA_FILE}?t=${Date.now()}`;
+      let res=await fetch(rawUrl,{cache:'no-store'});
+      if(!res.ok){
+        // Fallback to API
+        res=await fetch(GIST_API,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'});
+        if(!res.ok)throw new Error('Gist fetch failed: '+res.status);
+        const gist=await res.json();
+        var content=JSON.parse(gist.files[DATA_FILE].content);
+      }else{
+        var content=await res.json();
+      }
       setData(content);
       dataRef.current=content;
-      // Also cache locally for offline
-      localStorage.setItem('gzt_cloud_cache',JSON.stringify(content));
+    localStorage.setItem('gzt_cloud_cache',JSON.stringify(content));
       setSyncStatus('ok');
     }catch(e){
       console.warn('Cloud load failed, using cache:',e);
-      // Fallback to local cache
       try{
         const cached=JSON.parse(localStorage.getItem('gzt_cloud_cache'));
         if(cached){setData(cached);dataRef.current=cached;setSyncStatus('err')}
-        else{
-          // Use seed data
-          const seed=getDefaultData();
-          setData(seed);dataRef.current=seed;setSyncStatus('err');
-        }
+        else{const seed=getDefaultData();setData(seed);dataRef.current=seed;setSyncStatus('err')}
       }catch{const seed=getDefaultData();setData(seed);dataRef.current=seed;setSyncStatus('err')}
     }finally{setLoading(false)}
   };
