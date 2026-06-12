@@ -19,54 +19,124 @@
     .metric-ring{transform:rotate(-90deg)}
     ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:3px}
     .modal-overlay{background:rgba(0,0,0,.3);backdrop-filter:blur(4px)}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .spin{animation:spin 1s linear infinite}
+    .sync-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+    .sync-dot.ok{background:#10b981}.sync-dot.err{background:#ef4444}.sync-dot.loading{background:#f59e0b}
   </style>
 </head>
 <body class="bg-[#f4f6f9]">
 <div id="root"></div>
 <script type="text/babel">
-const{useState,useEffect,useCallback}=React;
+const{useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 
-// ========== LocalStorage DB ==========
-const store={
-  get(key,def=[]){try{return JSON.parse(localStorage.getItem('gzt_'+key))||def}catch{return def}},
-  set(key,val){localStorage.setItem('gzt_'+key,JSON.stringify(val))},
-};
-let _id=()=>Date.now()+Math.random().toString(36).slice(2,6);
+// ========== Cloud Store (GitHub Gist) ==========
+const GIST_ID='aa6baa010efb971735f949e6d7bcf619';
+const GIST_API=`https://api.github.com/gists/${GIST_ID}`;
+const DATA_FILE='gzt_data.json';
 
-// ========== Seed Data ==========
-if(!localStorage.getItem('gzt_seeded')){
-  store.set('todos',[
-    {id:'t1',title:'填写各项比赛讯息',type:'待办',priority:'high',date:'2026-06-15',status:'pending'},
-    {id:'t2',title:'集团组织：代码创新大赛',type:'比赛',priority:'medium',date:'2026-06-20',status:'pending'},
-    {id:'t3',title:'集团组织：技术分享演讲比赛',type:'比赛',priority:'low',date:'2026-07-01',status:'pending'},
-  ]);
-  store.set('github_skills',[
-    {id:'s1',name:'taste-skill',author:'Leonxlnx',stars:'41,288',stw:'8,077',desc:'Taste-Skill - gives your AI good taste. stops the AI from generating boring, generic slop',url:'https://github.com/Leonxlnx/taste-skill'},
-    {id:'s2',name:'last30days-skill',author:'mvanhorn',stars:'39,569',stw:'11,732',desc:'AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web',url:'https://github.com/mvanhorn/last30days-skill'},
-    {id:'s3',name:'open-notebook',author:'lfnovo',stars:'29,179',stw:'4,648',desc:'An Open Source implementation of Notebook LM with more flexibility and features',url:'https://github.com/lfnovo/open-notebook'},
-    {id:'s4',name:'Agent-Reach',author:'Panniantong',stars:'26,290',stw:'5,021',desc:'Give your AI agent eyes to see the entire internet. Read & search Twitter, Reddit, YouTube, GitHub, Bilibili — one CLI, zero API fees.',url:'https://github.com/Panniantong/Agent-Reach'},
-    {id:'s5',name:'headroom',author:'chopratejas',stars:'22,749',stw:'13,062',desc:'Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 60-95% fewer tokens, same answers.',url:'https://github.com/chopratejas/headroom'},
-    {id:'s6',name:'pm-skills',author:'phuryn',stars:'15,984',stw:'2,056',desc:'PM Skills Marketplace: 100+ agentic skills, commands, and plugins — discovery to strategy, execution, launch, growth.',url:'https://github.com/phuryn/pm-skills'},
-    {id:'s7',name:'cosmos',author:'NVIDIA',stars:'9,873',stw:'1,174',desc:'NVIDIA Cosmos - open platform of world models, datasets, and tools for Physical AI.',url:'https://github.com/NVIDIA/cosmos'},
-    {id:'s8',name:'plugins',author:'openai',stars:'2,792',stw:'1,371',desc:'OpenAI Plugins',url:'https://github.com/openai/plugins'},
-  ]);
-  store.set('newsletter',[
-    {id:'n1',title:'Fable 余震日报',summary:'Box AI eval 显示 Fable 全面碾压 Opus、Codex token 消耗异常激增、Cursor 两年 15→700 人',date:'2026-06-11',issue:24},
-    {id:'n2',title:'苹果入局日报',summary:'苹果宣布全设备 AI 智能、OpenAI 发布 2026 路线图定义 AGI 级别、Claude Code 一周年',date:'2026-06-10',issue:23},
-    {id:'n3',title:'Benchmark 3.0 日报',summary:'FrontierCode 发布揭示 SWEBench 一半结果为 slop、OpenAI 发布路线图、NotebookLM 扩展',date:'2026-06-09',issue:22},
-    {id:'n4',title:'设计 Loop 日报',summary:'Steipete 13734 赞宣言「去设计 loop 来 prompt agent」、OpenAI 推 100 天 10 倍限额',date:'2026-06-08',issue:21},
-    {id:'n5',title:'Model Routing 周末版',summary:'Levie 长文论 token 经济与 model routing、企业三阶段路由演进',date:'2026-06-07',issue:20},
-    {id:'n6',title:'Cowork 翻倍日报',summary:'Anthropic 翻倍 Cowork 限额、Vercel 发布 Skills API、AI skill 5 步构建法',date:'2026-06-06',issue:19},
-    {id:'n7',title:'代码自主化日报',summary:'Anthropic 80% 代码由 Claude 写、ChatGPT 可直接发布 web app',date:'2026-06-05',issue:18},
-    {id:'n8',title:'超杠杆通才日报',summary:'Nadella 谈全栈 Builder 崛起、Codex 因可靠性问题重置限额',date:'2026-06-04',issue:17},
-    {id:'n9',title:'Yes-Code 日报',summary:'Claude Code Workflows 发布、no-code 被宣告终结',date:'2026-06-03',issue:16},
-    {id:'n10',title:'多云竞争日报',summary:'OpenAI 入驻 AWS、MiniMax M3 成开源模型新标杆',date:'2026-06-02',issue:15},
-  ]);
-  store.set('metrics',[]);
-  store.set('schedules',[]);
-  store.set('polls',[]);
-  localStorage.setItem('gzt_seeded','1');
+const DataContext=createContext();
+
+function DataProvider({children}){
+  const[data,setData]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[syncStatus,setSyncStatus]=useState('loading'); // 'ok','err','loading','saving'
+  const[isAdmin,setIsAdmin]=useState(!!localStorage.getItem('gzt_admin_token'));
+  const saveTimer=useRef(null);
+  const dataRef=useRef(null);
+
+  // Load from Gist on mount
+  useEffect(()=>{
+    loadFromCloud();
+  },[]);
+
+  const loadFromCloud=async()=>{
+    setSyncStatus('loading');
+    try{
+      const res=await fetch(GIST_API,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'});
+      if(!res.ok)throw new Error('Gist fetch failed');
+      const gist=await res.json();
+      const content=JSON.parse(gist.files[DATA_FILE].content);
+      setData(content);
+      dataRef.current=content;
+      // Also cache locally for offline
+      localStorage.setItem('gzt_cloud_cache',JSON.stringify(content));
+      setSyncStatus('ok');
+    }catch(e){
+      console.warn('Cloud load failed, using cache:',e);
+      // Fallback to local cache
+      try{
+        const cached=JSON.parse(localStorage.getItem('gzt_cloud_cache'));
+        if(cached){setData(cached);dataRef.current=cached;setSyncStatus('err')}
+        else{
+          // Use seed data
+          const seed=getDefaultData();
+          setData(seed);dataRef.current=seed;setSyncStatus('err');
+        }
+      }catch{const seed=getDefaultData();setData(seed);dataRef.current=seed;setSyncStatus('err')}
+    }finally{setLoading(false)}
+  };
+
+  const getDefaultData=()=>({
+    todos:[],github_skills:[],newsletter:[],metrics:[],schedules:[],polls:[]
+  });
+
+  // Save to cloud (debounced)
+  const saveToCloud=useCallback((newData)=>{
+    setData(newData);
+    dataRef.current=newData;
+    localStorage.setItem('gzt_cloud_cache',JSON.stringify(newData));
+
+    const token=localStorage.getItem('gzt_admin_token');
+    if(!token){
+      // Not admin: save locally only, show warning
+      return;
+    }
+    // Debounce cloud save
+    if(saveTimer.current)clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      setSyncStatus('saving');
+      try{
+        const res=await fetch(GIST_API,{
+          method:'PATCH',
+          headers:{'Authorization':`token ${token}`,'Content-Type':'application/json','Accept':'application/vnd.github.v3+json'},
+          body:JSON.stringify({files:{[DATA_FILE]:{content:JSON.stringify(newData,null,2)}}})
+        });
+        if(!res.ok){
+          const err=await res.json().catch(()=>({}));
+          throw new Error(err.message||'Save failed');
+        }
+        setSyncStatus('ok');
+      }catch(e){
+        console.error('Cloud save failed:',e);
+        setSyncStatus('err');
+      }
+    },800);
+  },[]);
+
+  const updateKey=(key,val)=>{
+    const newData={...dataRef.current,[key]:val};
+    saveToCloud(newData);
+  };
+
+  const getKey=(key,def=[])=>{
+    if(!dataRef.current)return def;
+    return dataRef.current[key]||def;
+  };
+
+  const setAdminToken=(token)=>{
+    if(token){localStorage.setItem('gzt_admin_token',token);setIsAdmin(true)}
+    else{localStorage.removeItem('gzt_admin_token');setIsAdmin(false)}
+  };
+
+  return(<DataContext.Provider value={{data,loading,syncStatus,isAdmin,setAdminToken,updateKey,getKey,loadFromCloud}}>
+    {children}
+  </DataContext.Provider>);
 }
+
+function useData(){return useContext(DataContext)}
+
+let _id=()=>Date.now()+Math.random().toString(36).slice(2,6);
 
 // ========== Modal ==========
 function Modal({open,onClose,title,children}){
@@ -80,11 +150,49 @@ function Modal({open,onClose,title,children}){
     </div></div>);
 }
 
+// ========== SyncBadge ==========
+function SyncBadge(){
+  const{syncStatus,isAdmin,loadFromCloud}=useData();
+  const labels={ok:'已同步',err:'同步失败',loading:'加载中...',saving:'保存中...'};
+  const dotClass={ok:'ok',err:'err',loading:'loading',saving:'loading'};
+  return(<div className="flex items-center gap-[6px]">
+    <button onClick={loadFromCloud} className="text-[10px] text-gray-400 hover:text-blue-500" title="刷新数据"><i className={`fas fa-sync-alt ${syncStatus==='loading'||syncStatus==='saving'?'spin':''}`}></i></button>
+    <span className={`sync-dot ${dotClass[syncStatus]}`}></span>
+    <span className="text-[10px] text-gray-400">{labels[syncStatus]}</span>
+    {isAdmin&&<span className="text-[10px] text-emerald-500 font-medium">管理员</span>}
+  </div>);
+}
+
+// ========== AdminPanel ==========
+function AdminPanel({open,onClose}){
+  const{isAdmin,setAdminToken}=useData();
+  const[token,setToken]=useState('');
+  const handleSave=()=>{setAdminToken(token||null);onClose()};
+  const handleLogout=()=>{setAdminToken(null);onClose()};
+  return(<Modal open={open} onClose={onClose} title="管理员设置">
+    <div className="flex flex-col gap-[14px]">
+      <p className="text-[13px] text-gray-500 leading-relaxed">
+        输入 GitHub Personal Access Token (需 gist 权限) 即可编辑共享数据。<br/>
+        <span className="text-[11px] text-gray-400">普通访客可查看所有数据，但修改仅保存在本地。</span>
+      </p>
+      {isAdmin?(<div>
+        <div className="p-[12px] bg-emerald-50 rounded-[10px] text-[13px] text-emerald-700 mb-[12px]"><i className="fas fa-check-circle mr-[6px]"></i>当前已登录为管理员，数据修改会同步到云端</div>
+        <button onClick={handleLogout} className="w-full py-[9px] bg-red-50 text-red-600 rounded-[10px] text-[13px] font-medium hover:bg-red-100">退出管理员</button>
+      </div>):(<div>
+        <input type="password" value={token} onChange={e=>setToken(e.target.value)} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300 font-mono" placeholder="ghp_xxxxxxxxxxxx"/>
+        <button onClick={handleSave} className="mt-[10px] w-full py-[9px] bg-gray-900 text-white rounded-[10px] text-[13px] font-medium hover:bg-gray-800">保存 Token</button>
+      </div>)}
+    </div>
+  </Modal>);
+}
+
 // ========== Sidebar ==========
 function Sidebar({currentPage,onNavigate}){
   const[collapsed,setCollapsed]=useState(false);
+  const[showAdmin,setShowAdmin]=useState(false);
+  const{isAdmin}=useData();
   const navGroups={'核心看板':[{key:'index',icon:'fa-home',label:'数据概览'}],'资讯与协作':[{key:'aiInfo',icon:'fa-sparkles',label:'前沿视界'},{key:'orgActivity',icon:'fa-users',label:'组织事务'}]};
-  return(
+  return(<>
     <div className={`${collapsed?'w-[72px]':'w-[250px]'} bg-white min-h-screen flex flex-col border-r border-gray-100 shadow-[2px_0_8px_rgba(0,0,0,0.02)] transition-all duration-300 relative z-10`}>
       <div className={`p-[20px] ${collapsed?'px-[14px]':''} flex items-center gap-[10px] mb-[8px]`}>
         <div className="w-[34px] h-[34px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-[10px] flex items-center justify-center shadow flex-shrink-0"><i className="fas fa-layer-group text-white text-[13px]"></i></div>
@@ -104,16 +212,22 @@ function Sidebar({currentPage,onNavigate}){
           </div>
         ))}
       </div>
+      {!collapsed&&<div className="px-[14px] py-[8px]"><SyncBadge/></div>}
       <button onClick={()=>setCollapsed(!collapsed)} className="absolute top-[50%] -right-[12px] w-[22px] h-[22px] bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:shadow text-gray-400 hover:text-gray-600 text-[9px]">
         <i className={`fas ${collapsed?'fa-chevron-right':'fa-chevron-left'}`}></i>
       </button>
       <div className={`p-[14px] ${collapsed?'px-[10px]':'px-[16px]'} border-t border-gray-100`}>
         <div className="flex items-center gap-[8px]">
           <div className="w-[30px] h-[30px] rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">我</div>
-          {!collapsed&&<div className="text-[12px] font-medium text-gray-700 truncate">应用产品部</div>}
+          {!collapsed&&<div className="flex-1 flex items-center justify-between">
+            <div className="text-[12px] font-medium text-gray-700 truncate">应用产品部</div>
+            <button onClick={()=>setShowAdmin(true)} className={`w-[24px] h-[24px] rounded-[6px] flex items-center justify-center text-[11px] transition-colors ${isAdmin?'text-emerald-500 hover:bg-emerald-50':'text-gray-400 hover:bg-gray-100'}`} title="管理员设置"><i className={`fas ${isAdmin?'fa-lock-open':'fa-lock'}`}></i></button>
+          </div>}
         </div>
       </div>
-    </div>);
+    </div>
+    <AdminPanel open={showAdmin} onClose={()=>setShowAdmin(false)}/>
+  </>);
 }
 
 // ========== WelcomeHeader ==========
@@ -134,20 +248,22 @@ function MetricRing({percent,color,size=44}){
 
 // ========== QuarterGoals ==========
 function QuarterGoals(){
-  const[metrics,setMetrics]=useState(store.get('metrics',[]));
+  const{getKey,updateKey,isAdmin}=useData();
+  const metrics=getKey('metrics',[]);
   const[showAdd,setShowAdd]=useState(false);
   const[form,setForm]=useState({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});
   const[editId,setEditId]=useState(null);
-  const save=m=>{store.set('metrics',m);setMetrics(m)};
+  const save=m=>updateKey('metrics',m);
 
   const handleSave=()=>{
     if(!form.label||!form.value)return;
-    if(editId){save(metrics.map(m=>m.id===editId?{...m,...form}:m))}
-    else{save([...metrics,{id:_id(),...form}])}
+    const cur=getKey('metrics',[]);
+    if(editId){save(cur.map(m=>m.id===editId?{...m,...form}:m))}
+    else{save([...cur,{id:_id(),...form}])}
     setShowAdd(false);setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});
   };
   const handleEdit=m=>{setForm({label:m.label,value:m.value,change_text:m.change_text,positive:m.positive,percent:m.percent,color:m.color,icon:m.icon,link:m.link||''});setEditId(m.id);setShowAdd(true)};
-  const handleDel=id=>save(metrics.filter(m=>m.id!==id));
+  const handleDel=id=>save(getKey('metrics',[]).filter(m=>m.id!==id));
   const colorOpts=[{v:'#3b82f6',l:'蓝'},{v:'#10b981',l:'绿'},{v:'#8b5cf6',l:'紫'},{v:'#f59e0b',l:'橙'},{v:'#ef4444',l:'红'},{v:'#06b6d4',l:'青'}];
 
   return(<div className="animate-fadeInUp stagger-1">
@@ -155,17 +271,17 @@ function QuarterGoals(){
       <div><h2 className="text-[17px] font-bold text-gray-900">季度核心目标</h2><div className="text-[12px] text-gray-500 mt-[2px]">监控关键业务指标与系统状态</div></div>
       <div className="flex items-center gap-[10px]">
         <a href="https://joyspace.jd.com/sheets/hzlz9t5uEmXdzLKSUyHn" target="_blank" rel="noreferrer" className="text-[12px] text-blue-600 hover:text-blue-700 flex items-center gap-[4px] font-medium">查看战略图景 <i className="fas fa-arrow-right text-[10px]"></i></a>
-        <button onClick={()=>{setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});setShowAdd(true)}} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-plus mr-[4px]"></i>新增指标</button>
+        {isAdmin&&<button onClick={()=>{setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});setShowAdd(true)}} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-plus mr-[4px]"></i>新增指标</button>}
       </div>
     </div>
-    {metrics.length===0?(<div className="bg-white rounded-[16px] p-[40px] border border-dashed border-gray-200 text-center"><i className="fas fa-chart-pie text-[32px] text-gray-300 mb-[12px]"></i><p className="text-[14px] text-gray-500">暂无核心指标，点击「新增指标」添加</p></div>):(
+    {metrics.length===0?(<div className="bg-white rounded-[16px] p-[40px] border border-dashed border-gray-200 text-center"><i className="fas fa-chart-pie text-[32px] text-gray-300 mb-[12px]"></i><p className="text-[14px] text-gray-500">暂无核心指标{isAdmin?'，点击「新增指标」添加':''}</p></div>):(
       <div className="grid gap-[14px]" style={{gridTemplateColumns:`repeat(${Math.min(metrics.length,4)},1fr)`}}>
         {metrics.map(m=>(<div key={m.id} onClick={()=>m.link&&window.open(m.link,'_blank')} className={`group bg-white rounded-[16px] p-[20px] border border-gray-100 shadow-[0_2px_10px_rgba(0,0,0,0.03)] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden ${m.link?'cursor-pointer':''}`}>
           <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-[16px]" style={{background:`linear-gradient(90deg,${m.color},${m.color}88)`}}></div>
-          <div className="absolute top-[8px] right-[8px] opacity-0 group-hover:opacity-100 flex gap-[4px] transition-opacity">
+          {isAdmin&&<div className="absolute top-[8px] right-[8px] opacity-0 group-hover:opacity-100 flex gap-[4px] transition-opacity">
             <button onClick={e=>{e.stopPropagation();handleEdit(m)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 flex items-center justify-center text-gray-500 hover:text-blue-600 text-[10px]"><i className="fas fa-pen"></i></button>
             <button onClick={e=>{e.stopPropagation();handleDel(m.id)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 flex items-center justify-center text-gray-500 hover:text-red-600 text-[10px]"><i className="fas fa-trash"></i></button>
-          </div>
+          </div>}
           <div className="flex items-start justify-between"><div className="flex-1">
             <div className="text-[11px] text-gray-500 font-medium mb-[8px] flex items-center gap-[5px]"><i className={`fas ${m.icon} text-[9px]`} style={{color:m.color}}></i>{m.label}</div>
             <div className="text-[26px] font-bold text-gray-900 tracking-tight leading-none">{m.value}</div>
@@ -195,9 +311,10 @@ function QuarterGoals(){
 
 // ========== TodoList ==========
 function TodoList(){
-  const[todos,setTodos]=useState(store.get('todos',[]));
+  const{getKey,updateKey,isAdmin}=useData();
+  const todos=getKey('todos',[]);
   const[newTodo,setNewTodo]=useState('');
-  const save=t=>{store.set('todos',t);setTodos(t)};
+  const save=t=>updateKey('todos',t);
   const add=()=>{if(!newTodo.trim())return;save([{id:_id(),title:newTodo,type:'待办',priority:'medium',date:'',status:'pending'},...todos]);setNewTodo('')};
   const toggle=id=>save(todos.map(t=>t.id===id?{...t,status:t.status==='done'?'pending':'done'}:t));
   const del=id=>save(todos.filter(t=>t.id!==id));
@@ -205,16 +322,17 @@ function TodoList(){
   const pending=todos.filter(t=>t.status!=='done'),done=todos.filter(t=>t.status==='done');
   return(<div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] h-full flex flex-col animate-fadeInUp stagger-2">
     <div className="flex justify-between items-center mb-[16px]"><div><h2 className="text-[17px] font-bold text-gray-900">待办与关注</h2><span className="text-[11px] text-gray-400">{pending.length} 项待处理</span></div><span className="text-[11px] text-gray-400 bg-gray-100 px-[8px] py-[2px] rounded-full">{done.length}/{todos.length} 完成</span></div>
-    <div className="flex gap-[8px] mb-[12px]"><input value={newTodo} onChange={e=>setNewTodo(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="添加新待办..." className="flex-1 px-[12px] py-[8px] bg-gray-50 border border-gray-100 rounded-[10px] text-[13px] placeholder-gray-400 focus:outline-none focus:border-blue-300 focus:bg-white transition-all"/><button onClick={add} className="px-[12px] py-[8px] bg-gray-900 text-white rounded-[10px] text-[12px] font-medium hover:bg-gray-800"><i className="fas fa-plus"></i></button></div>
+    {isAdmin&&<div className="flex gap-[8px] mb-[12px]"><input value={newTodo} onChange={e=>setNewTodo(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="添加新待办..." className="flex-1 px-[12px] py-[8px] bg-gray-50 border border-gray-100 rounded-[10px] text-[13px] placeholder-gray-400 focus:outline-none focus:border-blue-300 focus:bg-white transition-all"/><button onClick={add} className="px-[12px] py-[8px] bg-gray-900 text-white rounded-[10px] text-[12px] font-medium hover:bg-gray-800"><i className="fas fa-plus"></i></button></div>}
     <div className="flex flex-col gap-[6px] flex-1 overflow-y-auto">
       {todos.sort((a,b)=>a.status==='done'?1:b.status==='done'?-1:0).map(t=>(<div key={t.id} className={`flex items-center justify-between p-[12px] rounded-[10px] border-l-[3px] ${pc[t.priority]||'border-l-gray-300'} bg-gray-50/60 hover:bg-white hover:shadow-sm transition-all group ${t.status==='done'?'opacity-50':''}`}>
         <div className="flex items-center gap-[10px]">
-          <button onClick={()=>toggle(t.id)} className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300 hover:border-blue-400'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</button>
+          {isAdmin?<button onClick={()=>toggle(t.id)} className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300 hover:border-blue-400'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</button>
+          :<div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</div>}
           <div><span className={`text-[13px] font-medium ${t.status==='done'?'text-gray-400 line-through':'text-gray-800'}`}>{t.title}</span>
             <div className="flex items-center gap-[6px] mt-[1px]"><span className={`text-[10px] font-medium px-[5px] py-[0.5px] rounded ${t.type==='待办'?'bg-orange-50 text-orange-500':'bg-emerald-50 text-emerald-500'}`}>{t.type}</span>{t.date&&<span className="text-[10px] text-gray-400">{t.date}</span>}</div>
           </div>
         </div>
-        <button onClick={()=>del(t.id)} className="text-[11px] text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><i className="fas fa-trash"></i></button>
+        {isAdmin&&<button onClick={()=>del(t.id)} className="text-[11px] text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><i className="fas fa-trash"></i></button>}
       </div>))}
     </div>
   </div>);
@@ -261,9 +379,10 @@ function Overview(){
 
 // ========== AIInfoPage ==========
 function AIInfoPage(){
+  const{getKey}=useData();
   const[activeTab,setActiveTab]=useState('news');
-  const newsletter=store.get('newsletter',[]);
-  const skills=store.get('github_skills',[]);
+  const newsletter=getKey('newsletter',[]);
+  const skills=getKey('github_skills',[]);
   return(<div className="flex-1 p-[32px]"><WelcomeHeader/>
     <div className="max-w-[1000px]"><div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative overflow-hidden animate-fadeInUp">
       <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
@@ -295,8 +414,9 @@ function AIInfoPage(){
 
 // ========== OrgActivityPage ==========
 function OrgActivityPage(){
-  const[schedules,setSchedules]=useState(store.get('schedules',[]));
-  const[polls,setPolls]=useState(store.get('polls',[]));
+  const{getKey,updateKey,isAdmin}=useData();
+  const schedules=getKey('schedules',[]);
+  const polls=getKey('polls',[]);
   const[showPoll,setShowPoll]=useState(false);
   const[pollForm,setPollForm]=useState({title:'',desc:'',options:['','']});
   const[showImport,setShowImport]=useState(false);
@@ -304,8 +424,8 @@ function OrgActivityPage(){
   const[importType,setImportType]=useState('周会');
   const[voterName,setVoterName]=useState(localStorage.getItem('gzt_voter')||'');
 
-  const saveSch=s=>{store.set('schedules',s);setSchedules(s)};
-  const savePoll=p=>{store.set('polls',p);setPolls(p)};
+  const saveSch=s=>updateKey('schedules',s);
+  const savePoll=p=>updateKey('polls',p);
   const weeklyMeeting=schedules.filter(s=>s.type==='周会');
   const familyDay=schedules.filter(s=>s.type==='家庭日');
 
@@ -330,13 +450,7 @@ function OrgActivityPage(){
     if(!name){name=prompt('请输入你的姓名:');if(!name)return;setVoterName(name);localStorage.setItem('gzt_voter',name)}
     savePoll(polls.map(p=>{
       if(p.id!==pollId)return p;
-      const opts=p.options.map(o=>{
-        let v=o.votes.filter(v=>v!==name);
-        if(o.id===optId)v=[...v,name];
-        return{...o,votes:v};
-      });
-      // Remove voter from other options
-      const newOpts=opts.map(o=>({...o,votes:o.id===optId?[...new Set([...o.votes.filter(v=>v!==name),name])]:o.votes.filter(v=>v!==name)}));
+      const newOpts=p.options.map(o=>({...o,votes:o.id===optId?[...new Set([...o.votes.filter(v=>v!==name),name])]:o.votes.filter(v=>v!==name)}));
       return{...p,options:newOpts};
     }));
   };
@@ -351,16 +465,16 @@ function OrgActivityPage(){
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-emerald-500"></div>
         <div className="flex items-center justify-between mb-[18px]">
           <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-blue-50 rounded-[8px] flex items-center justify-center"><i className="fas fa-calendar-alt text-blue-600 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900">协作排班</h2></div>
-          <button onClick={()=>setShowImport(true)} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-file-import mr-[4px]"></i>导入排班表</button>
+          {isAdmin&&<button onClick={()=>setShowImport(true)} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-file-import mr-[4px]"></i>导入排班表</button>}
         </div>
         <div className="grid grid-cols-2 gap-[16px]">
           <div className="bg-gradient-to-br from-blue-50/50 to-white rounded-[14px] p-[18px] border border-blue-100/30">
             <h3 className="text-[14px] font-semibold text-gray-800 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-chalkboard-user text-blue-500 text-[12px]"></i>周会排班</h3>
-            {weeklyMeeting.length>0?<div className="flex flex-col gap-[6px]">{weeklyMeeting.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><div className="flex items-center gap-[8px]"><span className="text-[12px] bg-blue-50 text-blue-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span>{s.role&&<span className="text-[11px] text-gray-400">{s.role}</span>}</div></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班，请导入表格</p>}
+            {weeklyMeeting.length>0?<div className="flex flex-col gap-[6px]">{weeklyMeeting.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><div className="flex items-center gap-[8px]"><span className="text-[12px] bg-blue-50 text-blue-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span>{s.role&&<span className="text-[11px] text-gray-400">{s.role}</span>}</div></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班{isAdmin?'，请导入表格':''}</p>}
           </div>
           <div className="bg-gradient-to-br from-emerald-50/50 to-white rounded-[14px] p-[18px] border border-emerald-100/30">
             <h3 className="text-[14px] font-semibold text-gray-800 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-house-chimney text-emerald-500 text-[12px]"></i>家庭日排班</h3>
-            {familyDay.length>0?<div className="flex flex-col gap-[6px]">{familyDay.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><span className="text-[12px] bg-emerald-50 text-emerald-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班，请导入表格</p>}
+            {familyDay.length>0?<div className="flex flex-col gap-[6px]">{familyDay.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><span className="text-[12px] bg-emerald-50 text-emerald-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班{isAdmin?'，请导入表格':''}</p>}
           </div>
         </div>
       </div>
@@ -370,7 +484,7 @@ function OrgActivityPage(){
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-orange-500 to-pink-500"></div>
         <div className="flex items-center justify-between mb-[18px]">
           <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-orange-50 rounded-[8px] flex items-center justify-center"><i className="fas fa-mug-hot text-orange-600 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900">团建与福利</h2></div>
-          <button onClick={()=>setShowPoll(true)} className="text-[12px] bg-blue-600 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-blue-700 font-medium"><i className="fas fa-poll mr-[4px]"></i>发起投票</button>
+          {isAdmin&&<button onClick={()=>setShowPoll(true)} className="text-[12px] bg-blue-600 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-blue-700 font-medium"><i className="fas fa-poll mr-[4px]"></i>发起投票</button>}
         </div>
         <div className="p-[16px] bg-gradient-to-r from-orange-50/50 to-white rounded-[14px] border border-orange-100/30 mb-[14px]">
           <div className="flex justify-between items-center mb-[8px]"><span className="text-[13px] text-gray-700 font-medium">部门团建经费账本</span><a href="https://joyspace.jd.com/sheets/4fa3isX6fEKrdZL8IbOF" target="_blank" rel="noreferrer" className="text-[12px] text-gray-500 hover:text-blue-600 font-medium">查看明细 ↗</a></div>
@@ -381,12 +495,14 @@ function OrgActivityPage(){
           return(<div key={poll.id} className="p-[16px] bg-white rounded-[12px] border border-gray-100">
             <div className="flex justify-between items-start mb-[10px]"><div><h4 className="text-[14px] font-semibold text-gray-800">{poll.title}</h4>{poll.desc&&<p className="text-[11px] text-gray-500 mt-[2px]">{poll.desc}</p>}</div>
               <div className="flex items-center gap-[6px]"><span className={`text-[10px] px-[6px] py-[1px] rounded-full font-medium ${poll.status==='active'?'bg-emerald-50 text-emerald-600':'bg-gray-100 text-gray-500'}`}>{poll.status==='active'?'进行中':'已结束'}</span><span className="text-[10px] text-gray-400">{total} 票</span>
-                {poll.status==='active'&&<button onClick={()=>closePoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="关闭"><i className="fas fa-stop"></i></button>}
-                <button onClick={()=>delPoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="删除"><i className="fas fa-trash"></i></button>
+                {isAdmin&&poll.status==='active'&&<button onClick={()=>closePoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="关闭"><i className="fas fa-stop"></i></button>}
+                {isAdmin&&<button onClick={()=>delPoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="删除"><i className="fas fa-trash"></i></button>}
               </div>
             </div>
             <div className="flex flex-col gap-[6px]">{poll.options.map(opt=>(<button key={opt.id} onClick={()=>poll.status==='active'&&vote(poll.id,opt.id)} disabled={poll.status!=='active'} className="flex items-center gap-[8px] p-[8px] rounded-[8px] border border-gray-100 hover:border-blue-200 transition-all text-left w-full">
-              <div className="flex-1"><div className="flex justify-between text-[12px] mb-[3px]"><span className="font-medium text-gray-700">{opt.text}</span><span className="text-gray-400">{opt.votes.length} 票{total>0?` (${Math.round(opt.votes.length/total*100)}%)`:''}</span></div><div className="h-[4px] bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{width:total>0?(opt.votes.length/total*100)+'%':'0%'}}></div></div></div>
+              <div className="flex-1"><div className="flex justify-between text-[12px] mb-[3px]"><span className="font-medium text-gray-700">{opt.text}</span><span className="text-gray-400">{opt.votes.length} 票{total>0?` (${Math.round(opt.votes.length/total*100)}%)`:''}</span></div><div className="h-[4px] bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{width:total>0?(opt.votes.length/total*100)+'%':'0%'}}></div></div>
+                {opt.votes.length>0&&<div className="mt-[3px] text-[10px] text-gray-400">{opt.votes.join('、')}</div>}
+              </div>
             </button>))}</div>
           </div>)})}</div>:<div className="text-[12px] text-gray-400 text-center py-[16px]">暂无进行中的投票</div>}
       </div>
@@ -415,9 +531,27 @@ function OrgActivityPage(){
   </div>);
 }
 
+// ========== Loading Screen ==========
+function LoadingScreen(){
+  return(<div className="w-full min-h-screen bg-[#f4f6f9] flex items-center justify-center">
+    <div className="text-center animate-fadeInUp">
+      <div className="w-[48px] h-[48px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-[14px] flex items-center justify-center shadow-lg mx-auto mb-[16px]"><i className="fas fa-layer-group text-white text-[20px]"></i></div>
+      <p className="text-[14px] text-gray-500 font-medium">加载共享数据中...</p>
+    </div>
+  </div>);
+}
+
 // ========== App ==========
 function App(){
   const[page,setPage]=useState('index');
+  return(<DataProvider>
+    <AppInner page={page} setPage={setPage}/>
+  </DataProvider>);
+}
+
+function AppInner({page,setPage}){
+  const{loading}=useData();
+  if(loading)return <LoadingScreen/>;
   return(<div className="w-full min-h-screen bg-[#f4f6f9]"><div className="mx-auto max-w-[1440px] flex min-h-screen">
     <Sidebar currentPage={page} onNavigate={setPage}/>
     <div className="flex-1 min-h-screen overflow-y-auto">
