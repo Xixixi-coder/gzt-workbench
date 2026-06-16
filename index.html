@@ -5,30 +5,76 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>应用产品部工作台</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    *{font-family:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif}
+    *{font-family:'Inter',-apple-system,BlinkMacSystont,'PingFang SC','Microsoft YaHei',sans-serif}
     @keyframes fadeInUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
     .animate-fadeInUp{animation:fadeInUp .4s ease-out forwards}
     .stagger-1{animation-delay:.05s;opacity:0}.stagger-2{animation-delay:.1s;opacity:0}.stagger-3{animation-delay:.15s;opacity:0}.stagger-4{animation-delay:.2s;opacity:0}
     .glass{background:rgba(255,255,255,.88);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.6)}
+    .dark .glass{background:rgba(30,32,38,.85);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.06)}
     .metric-ring{transform:rotate(-90deg)}
     ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:3px}
+    .dark ::-webkit-scrollbar-thumb{background:#374151}
     .modal-overlay{background:rgba(0,0,0,.3);backdrop-filter:blur(4px)}
+    .dark .modal-overlay{background:rgba(0,0,0,.55)}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
     .spin{animation:spin 1s linear infinite}
     .sync-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
     .sync-dot.ok{background:#10b981}.sync-dot.err{background:#ef4444}.sync-dot.loading{background:#f59e0b}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+    .animate-float{animation:float 3s ease-in-out infinite}
+    @keyframes pulse-soft{0%,100%{opacity:.6}50%{opacity:1}}
+    .animate-pulse-soft{animation:pulse-soft 2s ease-in-out infinite}
+    @keyframes scaleIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+    .animate-scaleIn{animation:scaleIn .25s ease-out forwards}
+    @keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .animate-slideUp{animation:slideUp .3s ease-out forwards}
+    /* Page transition */
+    @keyframes pageEnter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    .page-enter{animation:pageEnter .35s ease-out}
+    /* Dark mode transitions */
+    body,div,span,button,a,input,textarea,select{transition:background-color .3s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease}
+    /* FAB */
+    @keyframes fabPop{from{opacity:0;transform:scale(0) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    .fab-item{animation:fabPop .2s ease-out forwards;opacity:0}
+    .fab-item:nth-child(1){animation-delay:.02s}
+    .fab-item:nth-child(2){animation-delay:.06s}
+    .fab-item:nth-child(3){animation-delay:.1s}
+    .fab-item:nth-child(4){animation-delay:.14s}
+    /* Dark mode specific overrides */
+    .dark .dark\:glass-dark{background:rgba(30,32,38,.85);border-color:rgba(255,255,255,.06)}
   </style>
 </head>
-<body class="bg-[#f4f6f9]">
+<body class="bg-[#f4f6f9] dark:bg-[#111318]">
 <div id="root"></div>
 <script type="text/babel">
 const{useState,useEffect,useCallback,useRef,createContext,useContext}=React;
+
+// ========== Dark Mode Context ==========
+const ThemeContext=createContext();
+function ThemeProvider({children}){
+  const[dark,setDark]=useState(()=>{
+    const saved=localStorage.getItem('gzt_theme');
+    if(saved)return saved==='dark';
+    return window.matchMedia('(prefers-color-scheme:dark)').matches;
+  });
+  useEffect(()=>{
+    document.documentElement.classList.toggle('dark',dark);
+    localStorage.setItem('gzt_theme',dark?'dark':'light');
+  },[dark]);
+  return <ThemeContext.Provider value={{dark,setDark,toggle:()=>setDark(d=>!d)}}>{children}</ThemeContext.Provider>;
+}
+function useTheme(){return useContext(ThemeContext)}
 
 // ========== Cloud Store (GitHub Gist) ==========
 const GIST_ID='aa6baa010efb971735f949e6d7bcf619';
@@ -40,24 +86,19 @@ const DataContext=createContext();
 function DataProvider({children}){
   const[data,setData]=useState(null);
   const[loading,setLoading]=useState(true);
-  const[syncStatus,setSyncStatus]=useState('loading'); // 'ok','err','loading','saving'
+  const[syncStatus,setSyncStatus]=useState('loading');
   const[isAdmin,setIsAdmin]=useState(!!localStorage.getItem('gzt_admin_token'));
   const saveTimer=useRef(null);
   const dataRef=useRef(null);
 
-  // Load from Gist on mount
-  useEffect(()=>{
-    loadFromCloud();
-  },[]);
+  useEffect(()=>{loadFromCloud()},[]);
 
   const loadFromCloud=async()=>{
     setSyncStatus('loading');
     try{
-      // First try raw URL (CDN, no rate limit) with cache bust
       const rawUrl=`https://gist.githubusercontent.com/Xixixi-coder/${GIST_ID}/raw/${DATA_FILE}?t=${Date.now()}`;
       let res=await fetch(rawUrl,{cache:'no-store'});
       if(!res.ok){
-        // Fallback to API
         res=await fetch(GIST_API,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'});
         if(!res.ok)throw new Error('Gist fetch failed: '+res.status);
         const gist=await res.json();
@@ -65,9 +106,8 @@ function DataProvider({children}){
       }else{
         var content=await res.json();
       }
-      setData(content);
-      dataRef.current=content;
-    localStorage.setItem('gzt_cloud_cache',JSON.stringify(content));
+      setData(content);dataRef.current=content;
+      localStorage.setItem('gzt_cloud_cache',JSON.stringify(content));
       setSyncStatus('ok');
     }catch(e){
       console.warn('Cloud load failed, using cache:',e);
@@ -79,22 +119,13 @@ function DataProvider({children}){
     }finally{setLoading(false)}
   };
 
-  const getDefaultData=()=>({
-    todos:[],github_skills:[],newsletter:[],metrics:[],schedules:[],polls:[]
-  });
+  const getDefaultData=()=>({todos:[],github_skills:[],newsletter:[],metrics:[],schedules:[],polls:[]});
 
-  // Save to cloud (debounced)
   const saveToCloud=useCallback((newData)=>{
-    setData(newData);
-    dataRef.current=newData;
+    setData(newData);dataRef.current=newData;
     localStorage.setItem('gzt_cloud_cache',JSON.stringify(newData));
-
     const token=localStorage.getItem('gzt_admin_token');
-    if(!token){
-      // Not admin: save locally only, show warning
-      return;
-    }
-    // Debounce cloud save
+    if(!token)return;
     if(saveTimer.current)clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
       setSyncStatus('saving');
@@ -104,32 +135,15 @@ function DataProvider({children}){
           headers:{'Authorization':`token ${token}`,'Content-Type':'application/json','Accept':'application/vnd.github.v3+json'},
           body:JSON.stringify({files:{[DATA_FILE]:{content:JSON.stringify(newData,null,2)}}})
         });
-        if(!res.ok){
-          const err=await res.json().catch(()=>({}));
-          throw new Error(err.message||'Save failed');
-        }
+        if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.message||'Save failed')}
         setSyncStatus('ok');
-      }catch(e){
-        console.error('Cloud save failed:',e);
-        setSyncStatus('err');
-      }
+      }catch(e){console.error('Cloud save failed:',e);setSyncStatus('err')}
     },800);
   },[]);
 
-  const updateKey=(key,val)=>{
-    const newData={...dataRef.current,[key]:val};
-    saveToCloud(newData);
-  };
-
-  const getKey=(key,def=[])=>{
-    if(!dataRef.current)return def;
-    return dataRef.current[key]||def;
-  };
-
-  const setAdminToken=(token)=>{
-    if(token){localStorage.setItem('gzt_admin_token',token);setIsAdmin(true)}
-    else{localStorage.removeItem('gzt_admin_token');setIsAdmin(false)}
-  };
+  const updateKey=(key,val)=>{const newData={...dataRef.current,[key]:val};saveToCloud(newData)};
+  const getKey=(key,def=[])=>{if(!dataRef.current)return def;return dataRef.current[key]||def};
+  const setAdminToken=(token)=>{if(token){localStorage.setItem('gzt_admin_token',token);setIsAdmin(true)}else{localStorage.removeItem('gzt_admin_token');setIsAdmin(false)}};
 
   return(<DataContext.Provider value={{data,loading,syncStatus,isAdmin,setAdminToken,updateKey,getKey,loadFromCloud}}>
     {children}
@@ -137,19 +151,79 @@ function DataProvider({children}){
 }
 
 function useData(){return useContext(DataContext)}
-
 let _id=()=>Date.now()+Math.random().toString(36).slice(2,6);
+
+// ========== Empty State SVGs ==========
+function EmptyMetrics(){
+  return(<div className="flex flex-col items-center py-[32px]">
+    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" className="animate-float mb-[12px]">
+      <rect x="8" y="48" width="12" height="20" rx="3" className="fill-slate-200 dark:fill-slate-700 animate-pulse-soft" style={{animationDelay:'0s'}}/>
+      <rect x="24" y="36" width="12" height="32" rx="3" className="fill-blue-200 dark:fill-blue-800 animate-pulse-soft" style={{animationDelay:'.3s'}}/>
+      <rect x="40" y="24" width="12" height="44" rx="3" className="fill-indigo-200 dark:fill-indigo-800 animate-pulse-soft" style={{animationDelay:'.6s'}}/>
+      <rect x="56" y="16" width="12" height="52" rx="3" className="fill-violet-200 dark:fill-violet-800 animate-pulse-soft" style={{animationDelay:'.9s'}}/>
+      <path d="M14 46 L30 34 L46 22 L62 14" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 3" fill="none" strokeLinecap="round" className="dark:stroke-slate-500"/>
+      <circle cx="14" cy="46" r="2.5" className="fill-slate-400 dark:fill-slate-500"/>
+      <circle cx="30" cy="34" r="2.5" className="fill-blue-400 dark:fill-blue-500"/>
+      <circle cx="46" cy="22" r="2.5" className="fill-indigo-400 dark:fill-indigo-500"/>
+      <circle cx="62" cy="14" r="2.5" className="fill-violet-400 dark:fill-violet-500"/>
+    </svg>
+    <p className="text-[14px] text-gray-500 dark:text-gray-400">暂无核心指标</p>
+    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-[2px]">管理员可添加关键业务数据</p>
+  </div>);
+}
+
+function EmptySchedule({type}){
+  return(<div className="flex flex-col items-center py-[16px]">
+    <svg width="56" height="56" viewBox="0 0 56 56" fill="none" className="animate-float mb-[8px]">
+      <rect x="8" y="10" width="40" height="36" rx="6" className="fill-slate-100 dark:fill-slate-800 stroke-slate-200 dark:stroke-slate-700" strokeWidth="1.5"/>
+      <rect x="8" y="10" width="40" height="10" rx="6" className="fill-slate-200 dark:fill-slate-700"/>
+      <rect x="8" y="16" width="40" height="4" className="fill-slate-200 dark:fill-slate-700"/>
+      <circle cx="17" cy="15" r="2" className="fill-blue-300 dark:fill-blue-600"/>
+      <circle cx="28" cy="15" r="2" className="fill-emerald-300 dark:fill-emerald-600"/>
+      <circle cx="39" cy="15" r="2" className="fill-purple-300 dark:fill-purple-600"/>
+      <rect x="14" y="26" width="10" height="3" rx="1.5" className="fill-slate-200 dark:fill-slate-600 animate-pulse-soft"/>
+      <rect x="14" y="33" width="14" height="3" rx="1.5" className="fill-slate-200 dark:fill-slate-600 animate-pulse-soft" style={{animationDelay:'.4s'}}/>
+      <rect x="14" y="40" width="8" height="3" rx="1.5" className="fill-slate-200 dark:fill-slate-600 animate-pulse-soft" style={{animationDelay:'.8s'}}/>
+      <rect x="32" y="26" width="8" height="3" rx="1.5" className="fill-slate-200 dark:fill-slate-600 animate-pulse-soft" style={{animationDelay:'.2s'}}/>
+      <rect x="32" y="33" width="10" height="3" rx="1.5" className="fill-slate-200 dark:fill-slate-600 animate-pulse-soft" style={{animationDelay:'.6s'}}/>
+    </svg>
+    <p className="text-[12px] text-gray-400 dark:text-gray-500">暂无{type}排班</p>
+  </div>);
+}
+
+function EmptyPolls(){
+  return(<div className="flex flex-col items-center py-[16px]">
+    <svg width="56" height="56" viewBox="0 0 56 56" fill="none" className="animate-float mb-[8px]">
+      <rect x="6" y="8" width="32" height="22" rx="8" className="fill-blue-100 dark:fill-blue-900/50 stroke-blue-200 dark:stroke-blue-800" strokeWidth="1"/>
+      <circle cx="16" cy="19" r="2" className="fill-blue-300 dark:fill-blue-600 animate-pulse-soft"/>
+      <circle cx="22" cy="19" r="2" className="fill-blue-300 dark:fill-blue-600 animate-pulse-soft" style={{animationDelay:'.3s'}}/>
+      <circle cx="28" cy="19" r="2" className="fill-blue-300 dark:fill-blue-600 animate-pulse-soft" style={{animationDelay:'.6s'}}/>
+      <rect x="18" y="28" width="32" height="22" rx="8" className="fill-emerald-100 dark:fill-emerald-900/50 stroke-emerald-200 dark:stroke-emerald-800" strokeWidth="1"/>
+      <rect x="24" y="36" width="20" height="3" rx="1.5" className="fill-emerald-200 dark:fill-emerald-700"/>
+      <rect x="24" y="42" width="12" height="3" rx="1.5" className="fill-emerald-200 dark:fill-emerald-700"/>
+    </svg>
+    <p className="text-[12px] text-gray-400 dark:text-gray-500">暂无进行中的投票</p>
+  </div>);
+}
 
 // ========== Modal ==========
 function Modal({open,onClose,title,children}){
   if(!open)return null;
   return(<div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay" onClick={onClose}>
-    <div className="bg-white rounded-[20px] shadow-2xl w-[500px] max-h-[80vh] overflow-y-auto p-[28px] animate-fadeInUp" onClick={e=>e.stopPropagation()}>
+    <div className="bg-white dark:bg-[#1e2026] rounded-[20px] shadow-2xl w-[500px] max-h-[80vh] overflow-y-auto p-[28px] animate-scaleIn" onClick={e=>e.stopPropagation()}>
       <div className="flex justify-between items-center mb-[20px]">
-        <h3 className="text-[18px] font-bold text-gray-900">{title}</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button>
+        <h3 className="text-[18px] font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i className="fas fa-times"></i></button>
       </div>{children}
     </div></div>);
+}
+
+// ========== DarkModeToggle ==========
+function DarkModeToggle(){
+  const{dark,toggle}=useTheme();
+  return(<button onClick={toggle} className="w-[36px] h-[36px] rounded-[10px] flex items-center justify-center text-[14px] transition-all duration-300 hover:scale-105 active:scale-95 bg-gray-100 dark:bg-gray-800 text-amber-500 dark:text-blue-400 hover:bg-gray-200 dark:hover:bg-gray-700 shadow-sm" title={dark?'切换到浅色模式':'切换到深色模式'}>
+    <i className={`fas ${dark?'fa-moon':'fa-sun'} transition-transform duration-300`} style={{transform:dark?'rotate(-15deg)':'rotate(0deg)'}}></i>
+  </button>);
 }
 
 // ========== SyncBadge ==========
@@ -158,9 +232,9 @@ function SyncBadge(){
   const labels={ok:'已同步',err:'同步失败',loading:'加载中...',saving:'保存中...'};
   const dotClass={ok:'ok',err:'err',loading:'loading',saving:'loading'};
   return(<div className="flex items-center gap-[6px]">
-    <button onClick={loadFromCloud} className="text-[10px] text-gray-400 hover:text-blue-500" title="刷新数据"><i className={`fas fa-sync-alt ${syncStatus==='loading'||syncStatus==='saving'?'spin':''}`}></i></button>
+    <button onClick={loadFromCloud} className="text-[10px] text-gray-400 hover:text-blue-500 dark:hover:text-blue-400" title="刷新数据"><i className={`fas fa-sync-alt ${syncStatus==='loading'||syncStatus==='saving'?'spin':''}`}></i></button>
     <span className={`sync-dot ${dotClass[syncStatus]}`}></span>
-    <span className="text-[10px] text-gray-400">{labels[syncStatus]}</span>
+    <span className="text-[10px] text-gray-400 dark:text-gray-500">{labels[syncStatus]}</span>
     {isAdmin&&<span className="text-[10px] text-emerald-500 font-medium">管理员</span>}
   </div>);
 }
@@ -173,16 +247,16 @@ function AdminPanel({open,onClose}){
   const handleLogout=()=>{setAdminToken(null);onClose()};
   return(<Modal open={open} onClose={onClose} title="管理员设置">
     <div className="flex flex-col gap-[14px]">
-      <p className="text-[13px] text-gray-500 leading-relaxed">
+      <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-relaxed">
         输入 GitHub Personal Access Token (需 gist 权限) 即可编辑共享数据。<br/>
-        <span className="text-[11px] text-gray-400">普通访客可查看所有数据，但修改仅保存在本地。</span>
+        <span className="text-[11px] text-gray-400 dark:text-gray-500">普通访客可查看所有数据，但修改仅保存在本地。</span>
       </p>
       {isAdmin?(<div>
-        <div className="p-[12px] bg-emerald-50 rounded-[10px] text-[13px] text-emerald-700 mb-[12px]"><i className="fas fa-check-circle mr-[6px]"></i>当前已登录为管理员，数据修改会同步到云端</div>
-        <button onClick={handleLogout} className="w-full py-[9px] bg-red-50 text-red-600 rounded-[10px] text-[13px] font-medium hover:bg-red-100">退出管理员</button>
+        <div className="p-[12px] bg-emerald-50 dark:bg-emerald-900/30 rounded-[10px] text-[13px] text-emerald-700 dark:text-emerald-400 mb-[12px]"><i className="fas fa-check-circle mr-[6px]"></i>当前已登录为管理员，数据修改会同步到云端</div>
+        <button onClick={handleLogout} className="w-full py-[9px] bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-[10px] text-[13px] font-medium hover:bg-red-100 dark:hover:bg-red-900/50">退出管理员</button>
       </div>):(<div>
-        <input type="password" value={token} onChange={e=>setToken(e.target.value)} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300 font-mono" placeholder="ghp_xxxxxxxxxxxx"/>
-        <button onClick={handleSave} className="mt-[10px] w-full py-[9px] bg-gray-900 text-white rounded-[10px] text-[13px] font-medium hover:bg-gray-800">保存 Token</button>
+        <input type="password" value={token} onChange={e=>setToken(e.target.value)} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300 font-mono" placeholder="***"/>
+        <button onClick={handleSave} className="mt-[10px] w-full py-[9px] bg-gray-900 dark:bg-blue-600 text-white rounded-[10px] text-[13px] font-medium hover:bg-gray-800 dark:hover:bg-blue-700">保存 Token</button>
       </div>)}
     </div>
   </Modal>);
@@ -195,19 +269,19 @@ function Sidebar({currentPage,onNavigate}){
   const{isAdmin}=useData();
   const navGroups={'核心看板':[{key:'index',icon:'fa-home',label:'数据概览'}],'资讯与协作':[{key:'aiInfo',icon:'fa-sparkles',label:'前沿视界'},{key:'orgActivity',icon:'fa-users',label:'组织事务'}]};
   return(<>
-    <div className={`${collapsed?'w-[72px]':'w-[250px]'} bg-white min-h-screen flex flex-col border-r border-gray-100 shadow-[2px_0_8px_rgba(0,0,0,0.02)] transition-all duration-300 relative z-10`}>
+    <div className={`${collapsed?'w-[72px]':'w-[250px]'} bg-white dark:bg-[#16181d] min-h-screen flex flex-col border-r border-gray-100 dark:border-gray-800 shadow-[2px_0_8px_rgba(0,0,0,0.02)] dark:shadow-[2px_0_8px_rgba(0,0,0,0.2)] transition-all duration-300 relative z-10`}>
       <div className={`p-[20px] ${collapsed?'px-[14px]':''} flex items-center gap-[10px] mb-[8px]`}>
-        <div className="w-[34px] h-[34px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-[10px] flex items-center justify-center shadow flex-shrink-0"><i className="fas fa-layer-group text-white text-[13px]"></i></div>
-        {!collapsed&&<span className="font-bold text-[16px] text-gray-900 tracking-tight whitespace-nowrap">应用产品部工作台</span>}
+        <div className="w-[34px] h-[34px] bg-gradient-to-br from-gray-800 to-gray-900 dark:from-blue-600 dark:to-indigo-700 rounded-[10px] flex items-center justify-center shadow flex-shrink-0"><i className="fas fa-layer-group text-white text-[13px]"></i></div>
+        {!collapsed&&<span className="font-bold text-[16px] text-gray-900 dark:text-gray-100 tracking-tight whitespace-nowrap">应用产品部工作台</span>}
       </div>
       <div className="flex-1 px-[10px] flex flex-col gap-[2px]">
         {Object.entries(navGroups).map(([g,items],gi)=>(
           <div key={g} className={gi>0?'mt-[12px]':''}>
-            {!collapsed&&<div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-[10px] mb-[6px]">{g}</div>}
+            {!collapsed&&<div className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-[10px] mb-[6px]">{g}</div>}
             {items.map(item=>(
               <button key={item.key} onClick={()=>onNavigate(item.key)}
-                className={`w-full flex items-center gap-[10px] text-left px-[12px] py-[10px] rounded-[10px] text-[13px] font-medium transition-all duration-200 mb-[1px] ${currentPage===item.key?'bg-gradient-to-r from-gray-900 to-gray-800 text-white shadow-md':'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
-                <i className={`fas ${item.icon} w-[16px] text-center text-[12px] ${currentPage===item.key?'text-white':'text-gray-400'}`}></i>
+                className={`w-full flex items-center gap-[10px] text-left px-[12px] py-[10px] rounded-[10px] text-[13px] font-medium transition-all duration-200 mb-[1px] ${currentPage===item.key?'bg-gradient-to-r from-gray-900 to-gray-800 dark:from-blue-600 dark:to-indigo-600 text-white shadow-md':'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                <i className={`fas ${item.icon} w-[16px] text-center text-[12px] ${currentPage===item.key?'text-white':'text-gray-400 dark:text-gray-500'}`}></i>
                 {!collapsed&&item.label}
               </button>
             ))}
@@ -215,15 +289,18 @@ function Sidebar({currentPage,onNavigate}){
         ))}
       </div>
       {!collapsed&&<div className="px-[14px] py-[8px]"><SyncBadge/></div>}
-      <button onClick={()=>setCollapsed(!collapsed)} className="absolute top-[50%] -right-[12px] w-[22px] h-[22px] bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:shadow text-gray-400 hover:text-gray-600 text-[9px]">
+      <button onClick={()=>setCollapsed(!collapsed)} className="absolute top-[50%] -right-[12px] w-[22px] h-[22px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center shadow-sm hover:shadow text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-[9px]">
         <i className={`fas ${collapsed?'fa-chevron-right':'fa-chevron-left'}`}></i>
       </button>
-      <div className={`p-[14px] ${collapsed?'px-[10px]':'px-[16px]'} border-t border-gray-100`}>
+      <div className={`p-[14px] ${collapsed?'px-[10px]':'px-[16px]'} border-t border-gray-100 dark:border-gray-800`}>
         <div className="flex items-center gap-[8px]">
           <div className="w-[30px] h-[30px] rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">我</div>
           {!collapsed&&<div className="flex-1 flex items-center justify-between">
-            <div className="text-[12px] font-medium text-gray-700 truncate">应用产品部</div>
-            <button onClick={()=>setShowAdmin(true)} className={`w-[24px] h-[24px] rounded-[6px] flex items-center justify-center text-[11px] transition-colors ${isAdmin?'text-emerald-500 hover:bg-emerald-50':'text-gray-400 hover:bg-gray-100'}`} title="管理员设置"><i className={`fas ${isAdmin?'fa-lock-open':'fa-lock'}`}></i></button>
+            <div className="text-[12px] font-medium text-gray-700 dark:text-gray-300 truncate">应用产品部</div>
+            <div className="flex items-center gap-[4px]">
+              <DarkModeToggle/>
+              <button onClick={()=>setShowAdmin(true)} className={`w-[24px] h-[24px] rounded-[6px] flex items-center justify-center text-[11px] transition-colors ${isAdmin?'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30':'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`} title="管理员设置"><i className={`fas ${isAdmin?'fa-lock-open':'fa-lock'}`}></i></button>
+            </div>
           </div>}
         </div>
       </div>
@@ -239,13 +316,13 @@ function WelcomeHeader(){
   const h=time.getHours();
   const g=h<9?'早上好':h<12?'上午好':h<14?'中午好':h<18?'下午好':'晚上好';
   const d=time.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
-  return(<div className="flex justify-between items-center mb-[24px] animate-fadeInUp"><div><h1 className="text-[24px] font-bold text-gray-900 tracking-tight">{g}，欢迎回来 👋</h1><p className="text-[13px] text-gray-500 mt-[2px]">{d}</p></div></div>);
+  return(<div className="flex justify-between items-center mb-[24px] animate-fadeInUp"><div><h1 className="text-[24px] font-bold text-gray-900 dark:text-gray-100 tracking-tight">{g}，欢迎回来 👋</h1><p className="text-[13px] text-gray-500 dark:text-gray-400 mt-[2px]">{d}</p></div></div>);
 }
 
 // ========== MetricRing ==========
 function MetricRing({percent,color,size=44}){
   const r=(size-6)/2,c=2*Math.PI*r;
-  return(<svg width={size} height={size} className="metric-ring"><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth="5"/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5" strokeDasharray={c} strokeDashoffset={c-(percent/100)*c} strokeLinecap="round" style={{transition:'stroke-dashoffset 1s ease-out'}}/></svg>);
+  return(<svg width={size} height={size} className="metric-ring"><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="currentColor" strokeWidth="5" className="text-gray-100 dark:text-gray-700"/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5" strokeDasharray={c} strokeDashoffset={c-(percent/100)*c} strokeLinecap="round" style={{transition:'stroke-dashoffset 1s ease-out'}}/></svg>);
 }
 
 // ========== QuarterGoals ==========
@@ -256,56 +333,49 @@ function QuarterGoals(){
   const[form,setForm]=useState({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});
   const[editId,setEditId]=useState(null);
   const save=m=>updateKey('metrics',m);
-
-  const handleSave=()=>{
-    if(!form.label||!form.value)return;
-    const cur=getKey('metrics',[]);
-    if(editId){save(cur.map(m=>m.id===editId?{...m,...form}:m))}
-    else{save([...cur,{id:_id(),...form}])}
-    setShowAdd(false);setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});
-  };
+  const handleSave=()=>{if(!form.label||!form.value)return;const cur=getKey('metrics',[]);if(editId){save(cur.map(m=>m.id===editId?{...m,...form}:m))}else{save([...cur,{id:_id(),...form}])}setShowAdd(false);setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''})};
   const handleEdit=m=>{setForm({label:m.label,value:m.value,change_text:m.change_text,positive:m.positive,percent:m.percent,color:m.color,icon:m.icon,link:m.link||''});setEditId(m.id);setShowAdd(true)};
   const handleDel=id=>save(getKey('metrics',[]).filter(m=>m.id!==id));
   const colorOpts=[{v:'#3b82f6',l:'蓝'},{v:'#10b981',l:'绿'},{v:'#8b5cf6',l:'紫'},{v:'#f59e0b',l:'橙'},{v:'#ef4444',l:'红'},{v:'#06b6d4',l:'青'}];
 
   return(<div className="animate-fadeInUp stagger-1">
     <div className="flex justify-between items-end mb-[14px] px-[4px]">
-      <div><h2 className="text-[17px] font-bold text-gray-900">季度核心目标</h2><div className="text-[12px] text-gray-500 mt-[2px]">监控关键业务指标与系统状态</div></div>
+      <div><h2 className="text-[17px] font-bold text-gray-900 dark:text-gray-100">季度核心目标</h2><div className="text-[12px] text-gray-500 dark:text-gray-400 mt-[2px]">监控关键业务指标与系统状态</div></div>
       <div className="flex items-center gap-[10px]">
-        <a href="https://joyspace.jd.com/sheets/hzlz9t5uEmXdzLKSUyHn" target="_blank" rel="noreferrer" className="text-[12px] text-blue-600 hover:text-blue-700 flex items-center gap-[4px] font-medium">查看战略图景 <i className="fas fa-arrow-right text-[10px]"></i></a>
-        {isAdmin&&<button onClick={()=>{setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});setShowAdd(true)}} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-plus mr-[4px]"></i>新增指标</button>}
+        <a href="https://joyspace.jd.com/sheets/hzlz9t5uEmXdzLKSUyHn" target="_blank" rel="noreferrer" className="text-[12px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-[4px] font-medium">查看战略图景 <i className="fas fa-arrow-right text-[10px]"></i></a>
+        {isAdmin&&<button onClick={()=>{setEditId(null);setForm({label:'',value:'',change_text:'',positive:1,percent:0,color:'#3b82f6',icon:'fa-chart-line',link:''});setShowAdd(true)}} className="text-[12px] bg-gray-900 dark:bg-blue-600 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 dark:hoverue-700 font-medium"><i className="fas fa-plus mr-[4px]"></i>新增指标</button>}
       </div>
     </div>
-    {metrics.length===0?(<div className="bg-white rounded-[16px] p-[40px] border border-dashed border-gray-200 text-center"><i className="fas fa-chart-pie text-[32px] text-gray-300 mb-[12px]"></i><p className="text-[14px] text-gray-500">暂无核心指标{isAdmin?'，点击「新增指标」添加':''}</p></div>):(
+    {metrics.length===0?(<div className="bg-white dark:bg-[#1e2026] rounded-[16px] p-[24px] border border-dashed border-gray-200 dark:border-gray-700 text-center"><EmptyMetrics/></div>):(
       <div className="grid gap-[14px]" style={{gridTemplateColumns:`repeat(${Math.min(metrics.length,4)},1fr)`}}>
-        {metrics.map(m=>(<div key={m.id} onClick={()=>m.link&&window.open(m.link,'_blank')} className={`group bg-white rounded-[16px] p-[20px] border border-gray-100 shadow-[0_2px_10px_rgba(0,0,0,0.03)] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden ${m.link?'cursor-pointer':''}`}>
+        {metrics.map(m=>(<div key={m.id} onClick={()=>m.link&&window.open(m.link,'_blank')} className={`group bg-white dark:bg-[#1e2026] rounded-[16px] p-[20px] border border-gray-100 dark:border-gray-800 shadow-[0_2px_10px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.15)] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden ${m.link?'cursor-pointer':''}`}>
           <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-[16px]" style={{background:`linear-gradient(90deg,${m.color},${m.color}88)`}}></div>
           {isAdmin&&<div className="absolute top-[8px] right-[8px] opacity-0 group-hover:opacity-100 flex gap-[4px] transition-opacity">
-            <button onClick={e=>{e.stopPropagation();handleEdit(m)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 flex items-center justify-center text-gray-500 hover:text-blue-600 text-[10px]"><i className="fas fa-pen"></i></button>
-            <button onClick={e=>{e.stopPropagation();handleDel(m.id)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 flex items-center justify-center text-gray-500 hover:text-red-600 text-[10px]"><i className="fas fa-trash"></i></button>
+            <button onClick={e=>{e.stopPropagation();handleEdit(m)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 hover:text-blue-600 text-[10px]"><i className="fas fa-pen"></i></button>
+            <button onClick={e=>{e.stopPropagation();handleDel(m.id)}} className="w-[24px] h-[24px] rounded-[6px] bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 hover:text-red-600 text-[10px]"><i className="fas fa-trash"></i></button>
           </div>}
           <div className="flex items-start justify-between"><div className="flex-1">
-            <div className="text-[11px] text-gray-500 font-medium mb-[8px] flex items-center gap-[5px]"><i className={`fas ${m.icon} text-[9px]`} style={{color:m.color}}></i>{m.label}</div>
-            <div className="text-[26px] font-bold text-gray-900 tracking-tight leading-none">{m.value}</div>
-            {m.change_text&&<div className={`mt-[6px] text-[11px] font-medium inline-flex items-center gap-[3px] px-[6px] py-[1px] rounded-full ${m.positive===1?'text-emerald-600 bg-emerald-50':m.positive===0?'text-red-600 bg-red-50':'text-gray-500 bg-gray-100'}`}>{m.positive===1&&<i className="fas fa-arrow-up text-[8px]"></i>}{m.positive===0&&<i className="fas fa-arrow-down text-[8px]"></i>}{m.change_text}</div>}
+            <div className="text-[11px] text-gray-500 dark:text-gray-400 font-medium mb-[8px] flex items-center gap-[5px]"><i className={`fas ${m.icon} text-[9px]`} style={{color:m.color}}></i>{m.label}</div>
+            <div className="text-[26px] font-bold text-gray-900 dark:text-gray-100 tracking-tight leading-none">{m.value}</div>
+            {m.change_text&&<div className={`mt-[6px] text-[11px] font-medium inline-flex items-center gap-[3px] px-[6px] py-[1px] rounded-full ${m.positive===1?'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30':m.positive===0?'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-900/30':'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'}`}>{m.positive===1&&<i className="fas fa-arrow-up text-[8px]"></i>}{m.positive===0&&<i className="fas fa-arrow-down text-[8px]"></i>}{m.change_text}</div>}
           </div><div className="opacity-60 group-hover:opacity-100 transition-opacity"><MetricRing percent={m.percent} color={m.color}/></div></div>
         </div>))}
       </div>
     )}
     <Modal open={showAdd} onClose={()=>setShowAdd(false)} title={editId?'编辑指标':'新增指标'}>
       <div className="flex flex-col gap-[14px]">
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">指标名称 *</label><input value={form.label} onChange={e=>setForm({...form,label:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="如: 活跃用户增长"/></div>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">指标名称 *</label><input value={form.label} onChange={e=>setForm({...form,label:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="如: 活跃用户增长"/></div>
         <div className="grid grid-cols-2 gap-[10px]">
-          <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">数值 *</label><input value={form.value} onChange={e=>setForm({...form,value:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="如: 12,540"/></div>
-          <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">变化</label><input value={form.change_text} onChange={e=>setForm({...form,change_text:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="如: +10.2%"/></div>
+          <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">数值 *</label><input value={form.value} onChange={e=>setForm({...form,value:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="如: 12,540"/></div>
+          <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">变化</label><input value={form.change_text} onChange={e=>setForm({...form,change_text:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="如: +10.2%"/></div>
         </div>
         <div className="grid grid-cols-3 gap-[10px]">
-          <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">趋势</label><select value={form.positive} onChange={e=>setForm({...form,positive:Number(e.target.value)})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px]"><option value={1}>上升 ↑</option><option value={0}>下降 ↓</option><option value={-1}>持平 —</option></select></div>
-          <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">完成度 %</label><input type="number" min="0" max="100" value={form.percent} onChange={e=>setForm({...form,percent:Number(e.target.value)})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300"/></div>
-          <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">颜色</label><div className="flex gap-[4px] mt-[6px]">{colorOpts.map(c=>(<button key={c.v} onClick={()=>setForm({...form,color:c.v})} className={`w-[24px] h-[24px] rounded-full border-2 transition-all ${form.color===c.v?'border-gray-900 scale-110':'border-transparent'}`} style={{background:c.v}}></button>))}</div></div>
+          <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">趋势</label><select value={form.positive} onChange={e=>setForm({...form,positive:Number(e.target.value)})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100"><option value={1}>上升 ↑</option><option value={0}>下降 ↓</option><option value={-1}>持平 —</option></select></div>
+          <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">完成度 %</label><input type="number" min="0" max="100" value={form.percent} onChange={e=>setForm({...form,percent:Number(e.target.value)})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300"/></div>
+          <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">颜色</label><div className="flex gap-[4px] mt-[6px]">{colorOpts.map(c=>(<button key={c.v} onClick={()=>setForm({...form,color:c.v})} className={`w-[24px] h-[24px] rounded-full border-2 transition-all ${form.color===c.v?'border-gray-900 dark:border-white scale-110':'border-transparent'}`} style={{background:c.v}}></button>))}</div></div>
         </div>
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">跳转链接</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="https://..."/></div>
-        <button onClick={handleSave} className="mt-[4px] w-full py-[10px] bg-gray-900 text-white rounded-[10px] text-[14px] font-medium hover:bg-gray-800">{editId?'保存修改':'添加指标'}</button>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">跳转链接</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} className="w-full px-[12px] py-[9px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="https://..."/></div>
+        <button onClick={handleSave} className="mt-[4px] w-full py-[10px] bg-gray-900 dark:bg-blue-600 text-white rounded-[10px] text-[14px] font-medium hover:bg-gray-800 dark:hover:bg-blue-700">{editId?'保存修改':'添加指标'}</button>
       </div>
     </Modal>
   </div>);
@@ -322,20 +392,66 @@ function TodoList(){
   const del=id=>save(todos.filter(t=>t.id!==id));
   const pc={high:'border-l-red-400',medium:'border-l-amber-400',low:'border-l-blue-300'};
   const pending=todos.filter(t=>t.status!=='done'),done=todos.filter(t=>t.status==='done');
-  return(<div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] h-full flex flex-col animate-fadeInUp stagger-2">
-    <div className="flex justify-between items-center mb-[16px]"><div><h2 className="text-[17px] font-bold text-gray-900">待办与关注</h2><span className="text-[11px] text-gray-400">{pending.length} 项待处理</span></div><span className="text-[11px] text-gray-400 bg-gray-100 px-[8px] py-[2px] rounded-full">{done.length}/{todos.length} 完成</span></div>
-    {isAdmin&&<div className="flex gap-[8px] mb-[12px]"><input value={newTodo} onChange={e=>setNewTodo(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="添加新待办..." className="flex-1 px-[12px] py-[8px] bg-gray-50 border border-gray-100 rounded-[10px] text-[13px] placeholder-gray-400 focus:outline-none focus:border-blue-300 focus:bg-white transition-all"/><button onClick={add} className="px-[12px] py-[8px] bg-gray-900 text-white rounded-[10px] text-[12px] font-medium hover:bg-gray-800"><i className="fas fa-plus"></i></button></div>}
+  return(<div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] h-full flex flex-col animate-fadeInUp stagger-2">
+    <div className="flex justify-between items-center mb-[16px]"><div><h2 className="text-[17px] font-bold text-gray-900 dark:text-gray-100">待办与关注</h2><span className="text-[11px] text-gray-400 dark:text-gray-500">{pending.length} 项待处理</span></div><span className="text-[11px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-[8px] py-[2px] rounded-full">{done.length}/{todos.length} 完成</span></div>
+    {isAdmin&&<div className="flex gap-[8px] mb-[12px]"><input value={newTodo} onChange={e=>setNewTodo(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="添加新待办..." className="flex-1 px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-300 focus:bg-white dark:focus:bg-gray-700 transition-all"/><button onClick={add} className="px-[12px] py-[8px] bg-gray-900 dark:bg-blue-600 text-white rounded-[10px] text-[12px] font-medium hover:bg-gray-800 dark:hover:bg-blue-700"><i className="fas fa-plus"></i></button></div>}
     <div className="flex flex-col gap-[6px] flex-1 overflow-y-auto">
-      {todos.sort((a,b)=>a.status==='done'?1:b.status==='done'?-1:0).map(t=>(<div key={t.id} className={`flex items-center justify-between p-[12px] rounded-[10px] border-l-[3px] ${pc[t.priority]||'border-l-gray-300'} bg-gray-50/60 hover:bg-white hover:shadow-sm transition-all group ${t.status==='done'?'opacity-50':''}`}>
+      {todos.sort((a,b)=>a.status==='done'?1:b.status==='done'?-1:0).map(t=>(<div key={t.id} className={`flex items-center justify-between p-[12px] rounded-[10px] border-l-[3px] ${pc[t.priority]||'border-l-gray-300'} bg-gray-50/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm transition-all group ${t.status==='done'?'opacity-50':''}`}>
         <div className="flex items-center gap-[10px]">
-          {isAdmin?<button onClick={()=>toggle(t.id)} className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300 hover:border-blue-400'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</button>
-          :<div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</div>}
-          <div><span className={`text-[13px] font-medium ${t.status==='done'?'text-gray-400 line-through':'text-gray-800'}`}>{t.title}</span>
-            <div className="flex items-center gap-[6px] mt-[1px]"><span className={`text-[10px] font-medium px-[5px] py-[0.5px] rounded ${t.type==='待办'?'bg-orange-50 text-orange-500':'bg-emerald-50 text-emerald-500'}`}>{t.type}</span>{t.date&&<span className="text-[10px] text-gray-400">{t.date}</span>}</div>
+          {isAdmin?<button onClick={()=>toggle(t.id)} className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300 dark:border-gray-600 hover:border-blue-400'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</button>
+          :<div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 ${t.status==='done'?'bg-emerald-500 border-emerald-500':'border-gray-300 dark:border-gray-600'}`}>{t.status==='done'&&<i className="fas fa-check text-white text-[8px]"></i>}</div>}
+          <div><span className={`text-[13px] font-medium ${t.status==='done'?'text-gray-400 dark:text-gray-500 line-through':'text-gray-800 dark:text-gray-200'}`}>{t.title}</span>
+            <div className="flex items-center gap-[6px] mt-[1px]"><span className={`text-[10px] font-medium px-[5px] py-[0.5px] rounded ${t.type==='待办'?'bg-orange-50 dark:bg-orange-900/30 text-orange-500 dark:text-orange-400':'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400'}`}>{t.type}</span>{t.date&&<span className="text-[10px] text-gray-400 dark:text-gray-500">{t.date}</span>}</div>
           </div>
         </div>
-        {isAdmin&&<button onClick={()=>del(t.id)} className="text-[11px] text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><i className="fas fa-trash"></i></button>}
+        {isAdmin&&<button onClick={()=>del(t.id)} className="text-[11px] text-gray-300 dark:text-gray-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><i className="fas fa-trash"></i></button>}
       </div>))}
+    </div>
+  </div>);
+}
+
+// ========== TeamActivity (Enhanced) ==========
+function TeamActivity(){
+  const{getKey}=useData();
+  const activities=getKey('team_activities',[]);
+
+  // Default example activities
+  const defaultActivities=[
+    {icon:'fa-code-branch',color:'blue',person:'张锐',action:'提交了代码审查',time:'2小时前'},
+    {icon:'fa-check-circle',color:'emerald',person:'李佳',action:'完成了 AI 助手迭代',time:'4小时前'},
+    {icon:'fa-lightbulb',color:'amber',person:'王远',action:'分享了技术方案',time:'昨天'},
+    {icon:'fa-chart-line',color:'purple',person:'陈宇',action:'更新了数据看板',time:'昨天'},
+  ];
+
+  const items=activities.length>0?activities:defaultActivities;
+  const colorMap={blue:'text-blue-500 bg-blue-50 dark:bg-blue-900/30',emerald:'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30',amber:'text-amber-500 bg-amber-50 dark:bg-amber-900/30',purple:'text-purple-500 bg-purple-50 dark:bg-purple-900/30',pink:'text-pink-500 bg-pink-50 dark:bg-pink-900/30'};
+
+  return(<div className="glass rounded-[18px] p-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] animate-fadeInUp stagger-3">
+    <div className="flex justify-between items-center mb-[12px]">
+      <div className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">团队动态</div>
+      <div className="flex items-center gap-[4px]">
+        <div className="flex -space-x-2">
+          <div className="w-[22px] h-[22px] rounded-full bg-blue-100 dark:bg-blue-900/50 border-2 border-white dark:border-gray-800 flex items-center justify-center text-[8px] text-blue-600 dark:text-blue-400 font-bold z-[3]">张</div>
+          <div className="w-[22px] h-[22px] rounded-full bg-emerald-100 dark:bg-emerald-900/50 border-2 border-white dark:border-gray-800 flex items-center justify-center text-[8px] text-emerald-600 dark:text-emerald-400 font-bold z-[2]">李</div>
+          <div className="w-[22px] h-[22px] rounded-full bg-purple-100 dark:bg-purple-900/50 border-2 border-white dark:border-gray-800 flex items-center justify-center text-[8px] text-purple-600 dark:text-purple-400 font-bold z-[1]">王</div>
+          <div className="w-[22px] h-[22px] rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-white dark:border-gray-800 flex items-center justify-center text-[8px] text-gray-500 dark:text-gray-400 font-bold">+5</div>
+        </div>
+      </div>
+    </div>
+    <div className="flex flex-col gap-[2px]">
+      {items.slice(0,4).map((a,i)=>(<div key={i} className="flex items-start gap-[8px] py-[6px] group">
+        <div className="relative flex-shrink-0">
+          <div className={`w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[10px] ${colorMap[a.color]||colorMap.blue}`}><i className={`fas ${a.icon}`}></i></div>
+          {i<items.slice(0,4).length-1&&<div className="absolute left-[12px] top-[26px] w-[1.5px] h-[10px] bg-gray-100 dark:bg-gray-700"></div>}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[12px] text-gray-700 dark:text-gray-300"><span className="font-semibold">{a.person}</span> {a.action}</div>
+          <div className="text-[10px] text-gray-400 dark:text-gray-500">{a.time}</div>
+        </div>
+      </div>))}
+    </div>
+    <div className="mt-[8px] pt-[8px] border-t border-gray-100 dark:border-gray-700 text-center">
+      <span className="text-[10px] text-gray-400 dark:text-gray-500">本周 <b className="text-gray-600 dark:text-gray-300">24+</b> 项活动</span>
     </div>
   </div>);
 }
@@ -349,10 +465,52 @@ function AITools(){
     {name:'joycode',icon:'fa-laptop-code',color:'indigo',href:'https://joycode.jd.com/'},
     {name:'joyclaw',icon:'fa-robot',color:'orange',href:'#'},
   ];
-  return(<div className="glass rounded-[18px] p-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex-1 flex flex-col animate-fadeInUp stagger-4">
-    <h3 className="text-[15px] font-bold text-gray-900 mb-[2px]">AI 工具合集</h3><p className="text-[11px] text-gray-400 mb-[12px]">提效与智能研发基础设施</p>
-    <div className="flex flex-col gap-[6px] flex-1 overflow-y-auto">{tools.map((t,i)=>(<a key={i} href={t.href} target="_blank" rel="noreferrer" className="flex items-center gap-[8px] p-[10px] rounded-[8px] hover:bg-gray-50 transition-all group border border-transparent hover:border-gray-100"><div className={`w-[30px] h-[30px] bg-${t.color}-50 rounded-[7px] flex items-center justify-center`}><i className={`fas ${t.icon} text-${t.color}-600 text-[12px]`}></i></div><span className="text-[13px] font-medium text-gray-800 flex-1">{t.name}</span><i className="fas fa-arrow-right text-[10px] text-gray-300 group-hover:text-gray-500"></i></a>))}</div>
+  const colorMap={blue:'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',emerald:'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',purple:'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',indigo:'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',orange:'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'};
+  return(<div className="glass rounded-[18px] p-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] flex-1 flex flex-col animate-fadeInUp stagger-4">
+    <h3 className="text-[15px] font-bold text-gray-900 dark:text-gray-100 mb-[2px]">AI 工具合集</h3><p className="text-[11px] text-gray-400 dark:text-gray-500 mb-[12px]">提效与智能研发基础设施</p>
+    <div className="flex flex-col gap-[6px] flex-1 overflow-y-auto">{tools.map((t,i)=>(<a key={i} href={t.href} target="_blank" rel="noreferrer" className="flex items-center gap-[8px] p-[10px] rounded-[8px] hover:bg-gray-50 dark:hover:bg-gray-800 transition-all group border border-transparent hover:border-gray-100 dark:hover:border-gray-700"><div className={`w-[30px] h-[30px] rounded-[7px] flex items-center justify-center ${colorMap[t.color]}`}><i className={`fas ${t.icon} text-[12px]`}></i></div><span className="text-[13px] font-medium text-gray-800 dark:text-gray-200 flex-1">{t.name}</span><i className="fas fa-arrow-right text-[10px] text-gray-300 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400"></i></a>))}</div>
   </div>);
+}
+
+// ========== FAB Quick Actions ==========
+function FAB({onNavigate}){
+  const[open,setOpen]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{
+    const handler=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[]);
+
+  const actions=[
+    {icon:'fa-plus',label:'添加待办',color:'blue',onClick:()=>{onNavigate('index');setOpen(false)}},
+    {icon:'fa-poll',label:'发起投票',color:'orange',onClick:()=>{onNavigate('orgActivity');setOpen(false)}},
+    {icon:'fa-calendar-check',label:'查看排班',color:'emerald',onClick:()=>{onNavigate('orgActivity');setOpen(false)}},
+    {icon:'fa-external-link-alt',label:'JoySpace',color:'purple',onClick:()=>{window.open('https://joyspace.jd.com/teams/CL3hiuRUe9EOVQMXu9WCs/9XiLd7doHAaCSck0Lftc','_blank');setOpen(false)}},
+  ];
+  const colorMap={blue:'bg-blue-500 hover:bg-blue-600',orange:'bg-orange-500 hover:bg-orange-600',emerald:'bg-emerald-500 hover:bg-emerald-600',purple:'bg-purple-500 hover:bg-purple-600'};
+
+  return(<div ref={ref} className="fixed bottom-[28px] right-[28px] z-40">
+    {open&&<div className="absolute bottom-[56px] right-0 flex flex-col gap-[8px] items-end">
+      {actions.map((a,i)=>(<button key={i} onClick={a.onClick} className={`fab-item flex items-center gap-[8px] px-[14px] py-[8px] rounded-[12px] text-white shadow-lg hover:shadow-xl transition-all ${colorMap[a.color]}`}>
+        <span className="text-[12px] font-medium whitespace-nowrap">{a.label}</span>
+        <i className={`fas ${a.icon} text-[12px]`}></i>
+      </button>))}
+    </div>}
+    <button onClick={()=>setOpen(!open)} className={`w-[48px] h-[48px] rounded-[14px] shadow-lg hover:shadow-xl flex items-center justify-center text-white text-[18px] transition-all duration-300 ${open?'bg-gray-700 dark:bg-gray-600 rotate-45':'bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700'}`}>
+      <i className="fas fa-plus"></i>
+    </button>
+  </div>);
+}
+
+// ========== Page Transition Wrapper ==========
+function PageTransition({page,children}){
+  const[key,setKey]=useState(page);
+  const[show,setShow]=useState(true);
+  useEffect(()=>{
+    if(page!==key){setShow(false);setTimeout(()=>{setKey(page);setShow(true)},150)}
+  },[page]);
+  return <div className={`transition-all duration-300 ${show?'opacity-100 translate-y-0':'opacity-0 translate-y-[8px]'}`}>{children}</div>;
 }
 
 // ========== Overview ==========
@@ -362,17 +520,7 @@ function Overview(){
     <div className="flex gap-[18px] flex-1 min-h-0">
       <div className="flex-[2.2] flex flex-col"><TodoList/></div>
       <div className="flex-[1] flex flex-col gap-[14px]">
-        <div className="glass rounded-[18px] p-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] animate-fadeInUp stagger-3">
-          <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-[12px]">团队动态</div>
-          <div className="flex items-center gap-[12px]">
-            <div className="flex -space-x-2">
-              <div className="w-[28px] h-[28px] rounded-full bg-blue-100 border-2 border-white flex items-center justify-center text-[10px] text-blue-600 font-bold z-[3]">张</div>
-              <div className="w-[28px] h-[28px] rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-[10px] text-emerald-600 font-bold z-[2]">李</div>
-              <div className="w-[28px] h-[28px] rounded-full bg-purple-100 border-2 border-white flex items-center justify-center text-[10px] text-purple-600 font-bold z-[1]">王</div>
-              <div className="w-[28px] h-[28px] rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-[10px] text-gray-600 font-bold">+5</div>
-            </div><span className="text-[12px] text-gray-500">本周 <b className="text-gray-800">24+</b> 项活动</span>
-          </div>
-        </div>
+        <TeamActivity/>
         <AITools/>
       </div>
     </div>
@@ -386,29 +534,29 @@ function AIInfoPage(){
   const newsletter=getKey('newsletter',[]);
   const skills=getKey('github_skills',[]);
   return(<div className="flex-1 p-[32px]"><WelcomeHeader/>
-    <div className="max-w-[1000px]"><div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative overflow-hidden animate-fadeInUp">
+    <div className="max-w-[1000px]"><div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] relative overflow-hidden animate-fadeInUp">
       <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
       <div className="flex justify-between items-center mb-[20px]">
-        <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-purple-50 rounded-[8px] flex items-center justify-center"><i className="fas fa-sparkles text-purple-600 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900">前沿视界</h2></div>
-        <div className="flex bg-gray-100 p-[3px] rounded-[8px]">{[['news','行业动态'],['skills','开源趋势'],['practice','内部沉淀']].map(([k,l])=>(<button key={k} onClick={()=>setActiveTab(k)} className={`px-[14px] py-[6px] text-[12px] font-medium rounded-[6px] transition-all ${activeTab===k?'bg-white text-gray-900 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>{l}</button>))}</div>
+        <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-purple-50 dark:bg-purple-900/30 rounded-[8px] flex items-center justify-center"><i className="fas fa-sparkles text-purple-600 dark:text-purple-400 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900 dark:text-gray-100">前沿视界</h2></div>
+        <div className="flex bg-gray-100 dark:bg-gray-800 p-[3px] rounded-[8px]">{[['news','行业动态'],['skills','开源趋势'],['practice','内部沉淀']].map(([k,l])=>(<button key={k} onClick={()=>setActiveTab(k)} className={`px-[14px] py-[6px] text-[12px] font-medium rounded-[6px] transition-all ${activeTab===k?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>{l}</button>))}</div>
       </div>
       <div className="min-h-[300px]">
         {activeTab==='news'&&(<div className="flex flex-col gap-[12px]">
-          <div className="p-[18px] bg-gradient-to-r from-blue-50/50 to-purple-50/30 rounded-[12px] border border-blue-100/30"><h3 className="text-[14px] font-semibold text-gray-800 mb-[4px]">🏦 金融支付 × AI 探索</h3><p className="text-[12px] text-gray-500 leading-relaxed">汇集最新支付行业与大模型结合的落地案例，探索智能客服、风控、投研等场景。</p></div>
-          <div className="p-[18px] bg-gradient-to-r from-emerald-50/50 to-blue-50/30 rounded-[12px] border border-emerald-100/30">
-            <div className="flex items-center justify-between mb-[4px]"><h3 className="text-[14px] font-semibold text-gray-800">📡 AI Builders' Insight</h3><a href="https://luolan0214.github.io/follow-builders-newsletter/" target="_blank" rel="noreferrer" className="text-[11px] bg-white border border-gray-200 px-[8px] py-[3px] rounded-[5px] text-gray-600 hover:text-blue-600 font-medium">阅读原刊 ↗</a></div>
-            <p className="text-[12px] text-gray-500 mb-[10px]">精选 Newsletter 内容，追踪硅谷与国内顶级团队最新突破。</p>
-            <div className="flex flex-col gap-[6px] max-h-[240px] overflow-y-auto">{newsletter.map(n=>(<a key={n.id} href="https://luolan0214.github.io/follow-builders-newsletter/" target="_blank" rel="noreferrer" className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100 hover:shadow-sm transition-all group"><div className="flex-1 min-w-0"><div className="text-[13px] font-medium text-gray-800 group-hover:text-blue-600 truncate">#{n.issue} {n.title}</div><div className="text-[11px] text-gray-400 truncate mt-[1px]">{n.summary}</div></div><span className="text-[10px] text-gray-400 ml-[10px] flex-shrink-0">{n.date}</span></a>))}</div>
+          <div className="p-[18px] bg-gradient-to-r from-blue-50/50 to-purple-50/30 dark:from-blue-900/20 dark:to-purple-900/10 rounded-[12px] border border-blue-100/30 dark:border-blue-800/30"><h3 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200 mb-[4px]">🏦 金融支付 × AI 探索</h3><p className="text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">汇集最新支付行业与大模型结合的落地案例，探索智能客服、风控、投研等场景。</p></div>
+          <div className="p-[18px] bg-gradient-to-r from-emerald-50/50 to-blue-50/30 dark:from-emerald-900/20 dark:to-blue-900/10 rounded-[12px] border border-emerald-100/30 dark:border-emerald-800/30">
+            <div className="flex items-center justify-between mb-[4px]"><h3 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200">📡 AI Builders' Insight</h3><a href="https://luolan0214.github.io/follow-builders-newsletter/" target="_blank" rel="noreferrer" className="text-[11px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-[8px] py-[3px] rounded-[5px] text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium">阅读原刊 ↗</a></div>
+            <p className="text-[12px] text-gray-500 dark:text-gray-400 mb-[10px]">精选 Newsletter 内容，追踪硅谷与国内顶级团队最新突破。</p>
+            <div className="flex flex-col gap-[6px] max-h-[240px] overflow-y-auto">{newsletter.map(n=>(<a key={n.id} href="https://luolan0214.github.io/follow-builders-newsletter/" target="_blank" rel="noreferrer" className="flex justify-between items-center p-[10px] bg-white dark:bg-gray-800 rounded-[8px] border border-gray-100 dark:border-gray-700 hover:shadow-sm transition-all group"><div className="flex-1 min-w-0"><div className="text-[13px] font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">#{n.issue} {n.title}</div><div className="text-[11px] text-gray-400 dark:text-gray-500 truncate mt-[1px]">{n.summary}</div></div><span className="text-[10px] text-gray-400 dark:text-gray-500 ml-[10px] flex-shrink-0">{n.date}</span></a>))}</div>
           </div>
         </div>)}
         {activeTab==='skills'&&(<div className="flex flex-col gap-[8px]">
-          <div className="text-[12px] text-gray-500 font-medium mb-[2px]">本周 GitHub 高赞项目</div>
-          {skills.map((s,i)=>(<a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="p-[14px] bg-gray-50 rounded-[10px] hover:bg-white hover:shadow-md transition-all border border-transparent hover:border-gray-100 group">
-            <div className="flex justify-between items-center mb-[4px]"><span className="text-[14px] font-semibold text-gray-900 group-hover:text-blue-600 flex items-center gap-[6px]"><span className="text-[11px] text-gray-400">{i<3?['🥇','🥈','🥉'][i]:(i+1)+'.'}</span>{s.author}/{s.name}</span><span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-[6px] py-[1px] rounded-full flex items-center gap-[3px]"><i className="fas fa-star text-[9px]"></i>{s.stars}</span></div>
-            <div className="text-[12px] text-gray-500">{s.desc}</div>{s.stw&&<div className="text-[10px] text-gray-400 mt-[2px]">📈 本周 +{s.stw}</div>}
+          <div className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[2px]">本周 GitHub 高赞项目</div>
+          {skills.map((s,i)=>(<a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="p-[14px] bg-gray-50 dark:bg-gray-800 rounded-[10px] hover:bg-white dark:hover:bg-gray-700 hover:shadow-md transition-all border border-transparent hover:border-gray-100 dark:hover:border-gray-600 group">
+            <div className="flex justify-between items-center mb-[4px]"><span className="text-[14px] font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-[6px]"><span className="text-[11px] text-gray-400">{i<3?['🥇','🥈','🥉'][i]:(i+1)+'.'}</span>{s.author}/{s.name}</span><span className="text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-[6px] py-[1px] rounded-full flex items-center gap-[3px]"><i className="fas fa-star text-[9px]"></i>{s.stars}</span></div>
+            <div className="text-[12px] text-gray-500 dark:text-gray-400">{s.desc}</div>{s.stw&&<div className="text-[10px] text-gray-400 dark:text-gray-500 mt-[2px]">📈 本周 +{s.stw}</div>}
           </a>))}
         </div>)}
-        {activeTab==='practice'&&(<div className="p-[24px] bg-gray-50 rounded-[12px] border border-dashed border-gray-200 text-center"><div className="w-[44px] h-[44px] bg-white rounded-full flex items-center justify-center shadow-sm mx-auto mb-[12px]"><i className="fas fa-book text-gray-400 text-[18px]"></i></div><h3 className="text-[14px] font-semibold text-gray-800 mb-[4px]">内部沉淀与最佳实践</h3><p className="text-[12px] text-gray-500 mb-[14px] max-w-[360px] mx-auto">汇集部门内创新分享、架构演进与教程文档</p><a href="https://joyspace.jd.com/teams/CL3hiuRUe9EOVQMXu9WCs/9XiLd7doHAaCSck0Lftc" target="_blank" rel="noreferrer" className="inline-block px-[16px] py-[7px] bg-white border border-gray-200 text-gray-700 rounded-[8px] text-[12px] font-medium hover:bg-gray-50 shadow-sm">前往 JoySpace 查阅</a></div>)}
+        {activeTab==='practice'&&(<div className="p-[24px] bg-gray-50 dark:bg-gray-800 rounded-[12px] border border-dashed border-gray-200 dark:border-gray-700 text-center"><div className="w-[44px] h-[44px] bg-white dark:bg-gray-700 rounded-full flex items-center justify-center shadow-sm mx-auto mb-[12px]"><i className="fas fa-book text-gray-400 dark:text-gray-500 text-[18px]"></i></div><h3 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200 mb-[4px]">内部沉淀与最佳实践</h3><p className="text-[12px] text-gray-500 dark:text-gray-400 mb-[14px] max-w-[360px] mx-auto">汇集部门内创新分享、架构演进与教程文档</p><a href="https://joyspace.jd.com/teams/CL3hiuRUe9EOVQMXu9WCs/9XiLd7doHAaCSck0Lftc" target="_blank" rel="noreferrer" className="inline-block px-[16px] py-[7px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-[8px] text-[12px] font-medium hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm">前往 JoySpace 查阅</a></div>)}
       </div>
     </div></div>
   </div>);
@@ -463,68 +611,68 @@ function OrgActivityPage(){
   return(<div className="flex-1 p-[32px]"><WelcomeHeader/>
     <div className="max-w-[1100px] flex flex-col gap-[20px]">
       {/* 排班 */}
-      <div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative overflow-hidden animate-fadeInUp">
+      <div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] relative overflow-hidden animate-fadeInUp">
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 to-emerald-500"></div>
         <div className="flex items-center justify-between mb-[18px]">
-          <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-blue-50 rounded-[8px] flex items-center justify-center"><i className="fas fa-calendar-alt text-blue-600 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900">协作排班</h2></div>
-          {isAdmin&&<button onClick={()=>setShowImport(true)} className="text-[12px] bg-gray-900 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 font-medium"><i className="fas fa-file-import mr-[4px]"></i>导入排班表</button>}
+          <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-blue-50 dark:bg-blue-900/30 rounded-[8px] flex items-center justify-center"><i className="fas fa-calendar-alt text-blue-600 dark:text-blue-400 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900 dark:text-gray-100">协作排班</h2></div>
+          {isAdmin&&<button onClick={()=>setShowImport(true)} className="text-[12px] bg-gray-900 dark:bg-blue-600 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-gray-800 dark:hover:bg-blue-700 font-medium"><i className="fas fa-file-import mr-[4px]"></i>导入排班表</button>}
         </div>
         <div className="grid grid-cols-2 gap-[16px]">
-          <div className="bg-gradient-to-br from-blue-50/50 to-white rounded-[14px] p-[18px] border border-blue-100/30">
-            <h3 className="text-[14px] font-semibold text-gray-800 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-chalkboard-user text-blue-500 text-[12px]"></i>周会排班</h3>
-            {weeklyMeeting.length>0?<div className="flex flex-col gap-[6px]">{weeklyMeeting.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><div className="flex items-center gap-[8px]"><span className="text-[12px] bg-blue-50 text-blue-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span>{s.role&&<span className="text-[11px] text-gray-400">{s.role}</span>}</div></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班{isAdmin?'，请导入表格':''}</p>}
+          <div className="bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/20 dark:to-[#1e2026] rounded-[14px] p-[18px] border border-blue-100/30 dark:border-blue-800/30">
+            <h3 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-chalkboard-user text-blue-500 dark:text-blue-400 text-[12px]"></i>周会排班</h3>
+            {weeklyMeeting.length>0?<div className="flex flex-col gap-[6px]">{weeklyMeeting.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white dark:bg-gray-800 rounded-[8px] border border-gray-100 dark:border-gray-700"><span className="text-[13px] text-gray-700 dark:text-gray-300 font-medium">{s.week}</span><div className="flex items-center gap-[8px]"><span className="text-[12px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span>{s.role&&<span className="text-[11px] text-gray-400 dark:text-gray-500">{s.role}</span>}</div></div>))}</div>:<EmptySchedule type="周会"/>}
           </div>
-          <div className="bg-gradient-to-br from-emerald-50/50 to-white rounded-[14px] p-[18px] border border-emerald-100/30">
-            <h3 className="text-[14px] font-semibold text-gray-800 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-house-chimney text-emerald-500 text-[12px]"></i>家庭日排班</h3>
-            {familyDay.length>0?<div className="flex flex-col gap-[6px]">{familyDay.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white rounded-[8px] border border-gray-100"><span className="text-[13px] text-gray-700 font-medium">{s.week}</span><span className="text-[12px] bg-emerald-50 text-emerald-600 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span></div>))}</div>:<p className="text-[12px] text-gray-400 text-center py-[12px]">暂无排班{isAdmin?'，请导入表格':''}</p>}
+          <div className="bg-gradient-to-br from-emerald-50/50 to-white dark:from-emerald-900/20 dark:to-[#1e2026] rounded-[14px] p-[18px] border border-emerald-100/30 dark:border-emerald-800/30">
+            <h3 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200 mb-[10px] flex items-center gap-[6px]"><i className="fas fa-house-chimney text-emerald-500 dark:text-emerald-400 text-[12px]"></i>家庭日排班</h3>
+            {familyDay.length>0?<div className="flex flex-col gap-[6px]">{familyDay.map(s=>(<div key={s.id} className="flex justify-between items-center p-[10px] bg-white dark:bg-gray-800 rounded-[8px] border border-gray-100 dark:border-gray-700"><span className="text-[13px] text-gray-700 dark:text-gray-300 font-medium">{s.week}</span><span className="text-[12px] bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-[8px] py-[2px] rounded-[5px] font-medium">{s.person}</span></div>))}</div>:<EmptySchedule type="家庭日"/>}
           </div>
         </div>
       </div>
 
       {/* 团建投票 */}
-      <div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] relative overflow-hidden animate-fadeInUp stagger-1">
+      <div className="glass rounded-[18px] p-[24px] shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.15)] relative overflow-hidden animate-fadeInUp stagger-1">
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-orange-500 to-pink-500"></div>
         <div className="flex items-center justify-between mb-[18px]">
-          <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-orange-50 rounded-[8px] flex items-center justify-center"><i className="fas fa-mug-hot text-orange-600 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900">团建与福利</h2></div>
+          <div className="flex items-center gap-[8px]"><div className="w-[32px] h-[32px] bg-orange-50 dark:bg-orange-900/30 rounded-[8px] flex items-center justify-center"><i className="fas fa-mug-hot text-orange-600 dark:text-orange-400 text-[14px]"></i></div><h2 className="text-[18px] font-bold text-gray-900 dark:text-gray-100">团建与福利</h2></div>
           {isAdmin&&<button onClick={()=>setShowPoll(true)} className="text-[12px] bg-blue-600 text-white px-[12px] py-[5px] rounded-[8px] hover:bg-blue-700 font-medium"><i className="fas fa-poll mr-[4px]"></i>发起投票</button>}
         </div>
-        <div className="p-[16px] bg-gradient-to-r from-orange-50/50 to-white rounded-[14px] border border-orange-100/30 mb-[14px]">
-          <div className="flex justify-between items-center mb-[8px]"><span className="text-[13px] text-gray-700 font-medium">部门团建经费账本</span><a href="https://joyspace.jd.com/sheets/4fa3isX6fEKrdZL8IbOF" target="_blank" rel="noreferrer" className="text-[12px] text-gray-500 hover:text-blue-600 font-medium">查看明细 ↗</a></div>
-          <button className="w-full flex justify-center items-center py-[8px] bg-white hover:bg-gray-50 text-gray-700 text-[12px] font-medium rounded-[8px] transition-colors border border-gray-100"><i className="fas fa-qrcode mr-[6px]"></i>迟到扫码缴费</button>
+        <div className="p-[16px] bg-gradient-to-r from-orange-50/50 to-white dark:from-orange-900/20 dark:to-[#1e2026] rounded-[14px] border border-orange-100/30 dark:border-orange-800/30 mb-[14px]">
+          <div className="flex justify-between items-center mb-[8px]"><span className="text-[13px] text-gray-700 dark:text-gray-300 font-medium">部门团建经费账本</span><a href="https://joyspace.jd.com/sheets/4fa3isX6fEKrdZL8IbOF" target="_blank" rel="noreferrer" className="text-[12px] text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium">查看明细 ↗</a></div>
+          <button className="w-full flex justify-center items-center py-[8px] bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-[12px] font-medium roundednsition-colors border border-gray-100 dark:border-gray-700"><i className="fas fa-qrcode mr-[6px]"></i>迟到扫码缴费</button>
         </div>
         {polls.length>0?<div className="flex flex-col gap-[12px]">{polls.map(poll=>{
           const total=poll.options.reduce((s,o)=>s+o.votes.length,0);
-          return(<div key={poll.id} className="p-[16px] bg-white rounded-[12px] border border-gray-100">
-            <div className="flex justify-between items-start mb-[10px]"><div><h4 className="text-[14px] font-semibold text-gray-800">{poll.title}</h4>{poll.desc&&<p className="text-[11px] text-gray-500 mt-[2px]">{poll.desc}</p>}</div>
-              <div className="flex items-center gap-[6px]"><span className={`text-[10px] px-[6px] py-[1px] rounded-full font-medium ${poll.status==='active'?'bg-emerald-50 text-emerald-600':'bg-gray-100 text-gray-500'}`}>{poll.status==='active'?'进行中':'已结束'}</span><span className="text-[10px] text-gray-400">{total} 票</span>
-                {isAdmin&&poll.status==='active'&&<button onClick={()=>closePoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="关闭"><i className="fas fa-stop"></i></button>}
-                {isAdmin&&<button onClick={()=>delPoll(poll.id)} className="text-[10px] text-gray-400 hover:text-red-500" title="删除"><i className="fas fa-trash"></i></button>}
+          return(<div key={poll.id} className="p-[16px] bg-white dark:bg-gray-800 rounded-[12px] border border-gray-100 dark:border-gray-700">
+            <div className="flex justify-between items-start mb-[10px]"><div><h4 className="text-[14px] font-semibold text-gray-800 dark:text-gray-200">{poll.title}</h4>{poll.desc&&<p className="text-[11px] text-gray-500 dark:text-gray-400 mt-[2px]">{poll.desc}</p>}</div>
+              <div className="flex items-center gap-[6px]"><span className={`text-[10px] px-[6px] py-[1px] rounded-full font-medium ${poll.status==='active'?'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400':'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>{poll.status==='active'?'进行中':'已结束'}</span><span className="text-[10px] text-gray-400 dark:text-gray-500">{total} 票</span>
+                {isAdmin&&poll.status==='active'&&<button onClick={()=>closePoll(poll.id)} className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-red-500" title="关闭"><i className="fas fa-stop"></i></button>}
+                {isAdmin&&<button onClick={()=>delPoll(poll.id)} className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-red-500" title="删除"><i className="fas fa-trash"></i></button>}
               </div>
             </div>
-            <div className="flex flex-col gap-[6px]">{poll.options.map(opt=>(<button key={opt.id} onClick={()=>poll.status==='active'&&vote(poll.id,opt.id)} disabled={poll.status!=='active'} className="flex items-center gap-[8px] p-[8px] rounded-[8px] border border-gray-100 hover:border-blue-200 transition-all text-left w-full">
-              <div className="flex-1"><div className="flex justify-between text-[12px] mb-[3px]"><span className="font-medium text-gray-700">{opt.text}</span><span className="text-gray-400">{opt.votes.length} 票{total>0?` (${Math.round(opt.votes.length/total*100)}%)`:''}</span></div><div className="h-[4px] bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{width:total>0?(opt.votes.length/total*100)+'%':'0%'}}></div></div>
-                {opt.votes.length>0&&<div className="mt-[3px] text-[10px] text-gray-400">{opt.votes.join('、')}</div>}
+            <div className="flex flex-col gap-[6px]">{poll.options.map(opt=>(<button key={opt.id} onClick={()=>poll.status==='active'&&vote(poll.id,opt.id)} disabled={poll.status!=='active'} className="flex items-center gap-[8px] p-[8px] rounded-[8px] border border-gray-100 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-700 transition-all text-left w-full">
+              <div className="flex-1"><div className="flex justify-between text-[12px] mb-[3px]"><span className="font-medium text-gray-700 dark:text-gray-300">{opt.text}</span><span className="text-gray-400 dark:text-gray-500">{opt.votes.length} 票{total>0?` (${Math.round(opt.votes.length/total*100)}%)`:''}</span></div><div className="h-[4px] bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{width:total>0?(opt.votes.length/total*100)+'%':'0%'}}></div></div>
+                {opt.votes.length>0&&<div className="mt-[3px] text-[10px] text-gray-400 dark:text-gray-500">{opt.votes.join('、')}</div>}
               </div>
             </button>))}</div>
-          </div>)})}</div>:<div className="text-[12px] text-gray-400 text-center py-[16px]">暂无进行中的投票</div>}
+          </div>)})}</div>:<EmptyPolls/>}
       </div>
     </div>
 
     <Modal open={showImport} onClose={()=>setShowImport(false)} title="导入排班表">
       <div className="flex flex-col gap-[12px]">
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">排班类型</label><select value={importType} onChange={e=>setImportType(e.target.value)} className="w-full px-[12px] py-[8px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px]"><option value="周会">周会排班</option><option value="家庭日">家庭日排班</option></select></div>
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">粘贴排班数据</label><p className="text-[11px] text-gray-400 mb-[6px]">格式: 周次, 负责人, 角色（可选）</p><textarea value={importText} onChange={e=>setImportText(e.target.value)} rows={6} className="w-full px-[12px] py-[8px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder={"W24, 张三, 主持人\nW25, 李四, 主持人\nW26, 王五, 主持人"}/></div>
-        <button onClick={handleImport} className="w-full py-[9px] bg-gray-900 text-white rounded-[10px] text-[13px] font-medium hover:bg-gray-800">确认导入</button>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">排班类型</label><select value={importType} onChange={e=>setImportType(e.target.value)} className="w-full px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100"><option value="周会">周会排班</option><option value="家庭日">家庭日排班</option></select></div>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">粘贴排班数据</label><p className="text-[11px] text-gray-400 dark:text-gray-500 mb-[6px]">格式: 周次, 负责人, 角色（可选）</p><textarea value={importText} onChange={e=>setImportText(e.target.value)} rows={6} className="w-full px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder={"W24, 张三, 主持人\nW25, 李四, 主持人\nW26, 王五, 主持人"}/></div>
+        <button onClick={handleImport} className="w-full py-[9px] bg-gray-900 dark:bg-blue-600 text-white rounded-[10px] text-[13px] font-medium hover:bg-gray-800 dark:hover:bg-blue-700">确认导入</button>
       </div>
     </Modal>
 
     <Modal open={showPoll} onClose={()=>setShowPoll(false)} title="发起团建投票">
       <div className="flex flex-col gap-[12px]">
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">投票主题 *</label><input value={pollForm.title} onChange={e=>setPollForm({...pollForm,title:e.target.value})} className="w-full px-[12px] py-[8px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="如: 本月团建去哪里？"/></div>
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">描述</label><input value={pollForm.desc} onChange={e=>setPollForm({...pollForm,desc:e.target.value})} className="w-full px-[12px] py-[8px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder="补充说明..."/></div>
-        <div><label className="text-[12px] text-gray-500 font-medium mb-[4px] block">选项 *（至少2个）</label>
-          <div className="flex flex-col gap-[6px]">{pollForm.options.map((o,i)=>(<div key={i} className="flex gap-[6px]"><input value={o} onChange={e=>{const ops=[...pollForm.options];ops[i]=e.target.value;setPollForm({...pollForm,options:ops})}} className="flex-1 px-[12px] py-[8px] bg-gray-50 border border-gray-200 rounded-[10px] text-[13px] focus:outline-none focus:border-blue-300" placeholder={`选项 ${i+1}`}/>{pollForm.options.length>2&&<button onClick={()=>setPollForm({...pollForm,options:pollForm.options.filter((_,j)=>j!==i)})} className="text-gray-400 hover:text-red-500 px-[6px]"><i className="fas fa-minus"></i></button>}</div>))}
-            <button onClick={()=>setPollForm({...pollForm,options:[...pollForm.options,'']})} className="text-[12px] text-blue-600 hover:text-blue-700 font-medium py-[4px]"><i className="fas fa-plus mr-[4px]"></i>添加选项</button>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">投票主题 *</label><input value={pollForm.title} onChange={e=>setPollForm({...pollForm,title:e.target.value})} className="w-full px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="如: 本月团建去哪里？"/></div>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">描述</label><input value={pollForm.desc} onChange={e=>setPollForm({...pollForm,desc:e.target.value})} className="w-full px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder="补充说明..."/></div>
+        <div><label className="text-[12px] text-gray-500 dark:text-gray-400 font-medium mb-[4px] block">选项 *（至少2个）</label>
+          <div className="flex flex-col gap-[6px]">{pollForm.options.map((o,i)=>(<div key={i} className="flex gap-[6px]"><input value={o} onChange={e=>{const ops=[...pollForm.options];ops[i]=e.target.value;setPollForm({...pollForm,options:ops})}} className="flex-1 px-[12px] py-[8px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-[10px] text-[13px] text-gray-900 dark:text-gray-100 focus:outline-none focus:border-blue-300" placeholder={`选项 ${i+1}`}/>{pollForm.options.length>2&&<button onClick={()=>setPollForm({...pollForm,options:pollForm.options.filter((_,j)=>j!==i)})} className="text-gray-400 hover:text-red-500 px-[6px]"><i className="fas fa-minus"></i></button>}</div>))}
+            <button onClick={()=>setPollForm({...pollForm,options:[...pollForm.options,'']})} className="text-[12px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium py-[4px]"><i className="fas fa-plus mr-[4px]"></i>添加选项</button>
           </div>
         </div>
         <button onClick={createPoll} className="mt-[4px] w-full py-[9px] bg-blue-600 text-white rounded-[10px] text-[13px] font-medium hover:bg-blue-700">发起投票</button>
@@ -535,10 +683,10 @@ function OrgActivityPage(){
 
 // ========== Loading Screen ==========
 function LoadingScreen(){
-  return(<div className="w-full min-h-screen bg-[#f4f6f9] flex items-center justify-center">
+  return(<div className="w-full min-h-screen bg-[#f4f6f9] dark:bg-[#111318] flex items-center justify-center">
     <div className="text-center animate-fadeInUp">
-      <div className="w-[48px] h-[48px] bg-gradient-to-br from-gray-800 to-gray-900 rounded-[14px] flex items-center justify-center shadow-lg mx-auto mb-[16px]"><i className="fas fa-layer-group text-white text-[20px]"></i></div>
-      <p className="text-[14px] text-gray-500 font-medium">加载共享数据中...</p>
+      <div className="w-[48px] h-[48px] bg-gradient-to-br from-gray-800 to-gray-900 dark:from-blue-600 dark:to-indigo-700 rounded-[14px] flex items-center justify-center shadow-lg mx-auto mb-[16px]"><i className="fas fa-layer-group text-white text-[20px]"></i></div>
+      <p className="text-[14px] text-gray-500 dark:text-gray-400 font-medium">加载共享数据中...</p>
     </div>
   </div>);
 }
@@ -546,21 +694,24 @@ function LoadingScreen(){
 // ========== App ==========
 function App(){
   const[page,setPage]=useState('index');
-  return(<DataProvider>
+  return(<ThemeProvider><DataProvider>
     <AppInner page={page} setPage={setPage}/>
-  </DataProvider>);
+  </DataProvider></ThemeProvider>);
 }
 
 function AppInner({page,setPage}){
   const{loading}=useData();
   if(loading)return <LoadingScreen/>;
-  return(<div className="w-full min-h-screen bg-[#f4f6f9]"><div className="mx-auto max-w-[1440px] flex min-h-screen">
+  return(<div className="w-full min-h-screen bg-[#f4f6f9] dark:bg-[#111318]"><div className="mx-auto max-w-[1440px] flex min-h-screen">
     <Sidebar currentPage={page} onNavigate={setPage}/>
     <div className="flex-1 min-h-screen overflow-y-auto">
-      {page==='index'&&<Overview/>}
-      {page==='aiInfo'&&<AIInfoPage/>}
-      {page==='orgActivity'&&<OrgActivityPage/>}
+      <PageTransition page={page}>
+        {page==='index'&&<Overview/>}
+        {page==='aiInfo'&&<AIInfoPage/>}
+        {page==='orgActivity'&&<OrgActivityPage/>}
+      </PageTransition>
     </div>
+    <FAB onNavigate={setPage}/>
   </div></div>);
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
